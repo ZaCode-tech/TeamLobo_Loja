@@ -21,5 +21,5 @@ window.LOJA = {
   cartao: { credito: "", debito: "" },
 
   freteCentavos: 0,                            // igual ao FRETE_CENTAVOS do Code.gs (0 = "a combinar")
-  endpoint: "https://script.google.com/macros/s/AKfycbzAbEDLf9hC0prnLKDE7wEIYrRpgmOQZ7XV3SdZCSxEX-HpyHsH1zKHFB2Lccs_ngOE/exec"                                 // <- cole aqui a URL do Apps Script que termina em /exec
+  endpoint: "https://script.google.com/macros/s/AKfycbzExVxDXV4CZoQTuKIllOhNN4mGbL8FY_Z4wn6iQ8FVMusK4Jt8r1s5xy6Qmj4mc6JL/exec"                                 // <- cole aqui a URL do Apps Script que termina em /exec
 };
