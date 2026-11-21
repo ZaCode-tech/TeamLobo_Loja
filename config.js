@@ -6,7 +6,7 @@ window.LOJA = {
   cidade: "Rio de Janeiro - RJ",
   whatsapp: "5521982814880", // DDI + DDD + número (só dígitos)
   oficialUrl: "https://zacode-tech.github.io/Team.Lobo/", // link do site oficial
-  freteCentavos: 1500, // 0 = "a combinar" | 1500 = R$ 15,00
+  freteCentavos: 0, // 0 = "a combinar" | 1500 = R$ 15,00
 
   // Cole aqui a URL gerada no Passo 3 (enquanto estiver vazio, o site roda em modo demonstração)
   endpoint: "https://script.google.com/macros/s/AKfycbzAbEDLf9hC0prnLKDE7wEIYrRpgmOQZ7XV3SdZCSxEX-HpyHsH1zKHFB2Lccs_ngOE/exec",
