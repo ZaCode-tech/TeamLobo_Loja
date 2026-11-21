@@ -1,8 +1,8 @@
 window.LOJA = {
   nome: "Team Lobo Store",
-  razaoSocial: "NOME COMPLETO OU MEI DO SID LOBO",
+  razaoSocial: "Team Lobo",
   cnpj: "00.000.000/0000-00",
-  telefone: "(21) 90000-0000",
+  telefone: "(21) 982814880",
   cidade: "Rio de Janeiro - RJ",
   whatsapp: "5521982814880", // DDI + DDD + número (só dígitos)
   oficialUrl: "https://zacode-tech.github.io/Team.Lobo/", // link do site oficial
