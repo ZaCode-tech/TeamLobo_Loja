@@ -9,7 +9,7 @@ window.LOJA = {
   freteCentavos: 1500, // 0 = "a combinar" | 1500 = R$ 15,00
 
   // Cole aqui a URL gerada no Passo 3 (enquanto estiver vazio, o site roda em modo demonstração)
-  endpoint: "",
+  endpoint: "https://script.google.com/macros/s/AKfycbzAbEDLf9hC0prnLKDE7wEIYrRpgmOQZ7XV3SdZCSxEX-HpyHsH1zKHFB2Lccs_ngOE/exec",
 
   pix: {
     chave: "602f1934-d35a-4e4a-97e1-3cf535231e02", // CPF, CNPJ, e-mail, telefone (+55...) ou chave aleatória
