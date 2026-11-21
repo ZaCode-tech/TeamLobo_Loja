@@ -11,7 +11,7 @@ window.LOJA = {
 
   /* PIX: a chave aleatória aparece para todo cliente na hora de pagar, então pode ficar aqui. */
   pix: {
-    chave: "",                                 // <- cole a chave aleatória (ex.: 123e4567-e89b-12d3-a456-426614174000)
+    chave: "AKfycbzAbEDLf9hC0prnLKDE7wEIYrRpgmOQZ7XV3SdZCSxEX-HpyHsH1zKHFB2Lccs_ngOE",                                 // <- cole a chave aleatória (ex.: 123e4567-e89b-12d3-a456-426614174000)
     nomeRecebedor: "TEAM LOBO",                // até 25 letras, sem acento (nome que aparece no banco do cliente)
     cidade: "RIO DE JANEIRO"                   // até 15 letras, sem acento
   },
@@ -21,5 +21,5 @@ window.LOJA = {
   cartao: { credito: "", debito: "" },
 
   freteCentavos: 0,                            // igual ao FRETE_CENTAVOS do Code.gs (0 = "a combinar")
-  endpoint: ""                                 // <- cole aqui a URL do Apps Script que termina em /exec
+  endpoint: "https://script.google.com/macros/s/AKfycbzAbEDLf9hC0prnLKDE7wEIYrRpgmOQZ7XV3SdZCSxEX-HpyHsH1zKHFB2Lccs_ngOE/exec"                                 // <- cole aqui a URL do Apps Script que termina em /exec
 };
