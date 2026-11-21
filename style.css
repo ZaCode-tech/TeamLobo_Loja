@@ -76,3 +76,5 @@ fieldset{border:0;margin-bottom:1rem}legend{font:700 1.05rem var(--font-d);text-
 #cola{resize:none;font:.8rem monospace;margin:.5rem 0}#checkBody .btn{margin:.3rem .3rem .3rem 0}
 @media(max-width:720px){.pdet{grid-template-columns:1fr}.two{grid-template-columns:1fr 1fr}.txt{display:none}.search{width:40vw}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+.demo-bar{padding:.6rem var(--pad);background:var(--bad);color:#fff;font-weight:600;font-size:.9rem;text-align:center}

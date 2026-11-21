@@ -6,7 +6,7 @@
   var $$ = function (s, c) { return Array.prototype.slice.call((c || document).querySelectorAll(s)); };
   var money = function (c) { return (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }); };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
-  var produtos = [], carrinho = [], filtro = "Todos";
+  var produtos = [], carrinho = [], filtro = "Todos", fonte = "reserva (produtos.js)";
 
   /* ---------- Pix (BR Code) ---------- */
   function emv(id, v) { return id + ("0" + v.length).slice(-2) + v; }
@@ -193,8 +193,11 @@
     var reserva = function () { return window.PRODUTOS || []; };
     if (!L.endpoint) return Promise.resolve(reserva());
     var ctl = new AbortController(), to = setTimeout(function () { ctl.abort(); }, 8000);
-    return fetch(L.endpoint + "?action=catalogo", { signal: ctl.signal }).then(function (r) { return r.json(); }).then(function (j) { clearTimeout(to); return j.ok && j.produtos.length ? j.produtos : reserva(); }).catch(function () { return reserva(); });
+    return fetch(L.endpoint + "?action=catalogo&_=" + Date.now(), { signal: ctl.signal, cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) { clearTimeout(to); if (j.ok && j.produtos.length) { fonte = "planilha"; return j.produtos; } return reserva(); }).catch(function () { return reserva(); });
   }
+  function aviso(t) { var d = document.createElement("div"); d.className = "demo-bar"; d.textContent = t; document.body.insertBefore(d, document.body.firstChild); }
+  if (!window.LOJA) aviso("Atenção: o arquivo config.js não carregou. Ele precisa começar com window.LOJA = { e não pode conter o código do Code.gs.");
+  else if (!L.endpoint) aviso("Modo demonstração: a loja ainda não está ligada à planilha (endpoint vazio no config.js). Os produtos vêm do produtos.js e os pedidos não são enviados.");
   carregarCarrinho();
-  carregar().then(function (lista) { produtos = lista; carrinho = carrinho.filter(function (i) { return prod(i.id); }); salvar(); renderCats(); renderGrid(); });
+  carregar().then(function (lista) { if (/[?&]debug\b/.test(location.search)) aviso("Catálogo lido de: " + fonte + (fonte === "planilha" ? ". Para mudar preços, edite a aba Produtos da planilha." : ". O produtos.js é só reserva: se a planilha estiver ligada, edite os preços nela.")); produtos = lista; carrinho = carrinho.filter(function (i) { return prod(i.id); }); salvar(); renderCats(); renderGrid(); });
 })();
