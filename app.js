@@ -1,4 +1,4 @@
-/* LOJA TEAM LOBO — núcleo, carrinho, checkout e Pix */
+/* LOJA TEAM LOBO — vitrine 3D, carrinho, checkout e Pix (JavaScript puro) */
 (function () {
   "use strict";
   var L = window.LOJA || {}, root = document.documentElement;
@@ -56,7 +56,7 @@
     d.addEventListener("click", function (e) { if (e.target === d || (e.target.dataset && "close" in e.target.dataset)) d.close(); });
   });
 
-  /* ---------- Vitrine 3D ---------- */
+  /* ---------- Vitrine & Filtros ---------- */
   function foto(p, cls) {
     var mono = esc(p.nome.split(" ").slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase());
     return '<div class="ph ' + (cls || "") + '" data-mono="' + mono + '">' + (p.fotos && p.fotos[0] ? '<img src="' + esc(p.fotos[0]) + '" alt="' + esc(p.nome) + '" loading="lazy" decoding="async">' : "") + "</div>";
@@ -163,7 +163,7 @@
   }
   $("#dlgCheck").addEventListener("close", function () { if ($("#checkBody").innerHTML.indexOf("registrado") >= 0) { $("#checkBody").innerHTML = checkHtml; location.reload(); } });
 
-  /* ---------- Ponte para vitrine3d.js ---------- */
+  /* ---------- Ponte para a Vitrine 3D ---------- */
   window.LojaCore = {
     money: money,
     adicionar: adicionar,
@@ -185,12 +185,15 @@
     return fetch(L.endpoint + "?action=catalogo&_=" + Date.now(), { signal: ctl.signal, cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) { clearTimeout(to); if (j.ok && j.produtos.length) { fonte = "planilha"; return j.produtos; } return reserva(); }).catch(function () { return reserva(); });
   }
   function aviso(t) { var d = document.createElement("div"); d.className = "demo-bar"; d.textContent = t; document.body.insertBefore(d, document.body.firstChild); }
-  if (!window.LOJA) aviso("Atenção: o arquivo config.js não carregou.");
-  else if (!L.endpoint) aviso("Modo demonstração: endpoint vazio no config.js.");
+  if (!window.LOJA) aviso("Atenção: o arquivo config.js não carregou. Ele precisa começar com window.LOJA = { e não pode conter o código do Code.gs.");
+  else if (!L.endpoint) aviso("Modo demonstração: a loja ainda não está ligada à planilha (endpoint vazio no config.js). Os produtos vêm do produtos.js e os pedidos não são enviados.");
   carregarCarrinho();
   carregar().then(function (lista) {
     if (/[?&]debug\b/.test(location.search)) aviso("Catálogo lido de: " + fonte);
-    produtos = lista; carrinho = carrinho.filter(function (i) { return prod(i.id); }); salvar();
-    renderCats(); renderVitrine();
+    produtos = lista;
+    carrinho = carrinho.filter(function (i) { return prod(i.id); });
+    salvar();
+    renderCats();
+    renderVitrine();
   });
 })();
