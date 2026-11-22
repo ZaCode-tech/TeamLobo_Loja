@@ -1,6 +1,6 @@
-/* VITRINE 3D — trilho de cabides.
-   As peças "caem" no trilho; passando o mouse (ou o dedo) a peça mais próxima gira e vira de frente.
-   Tocar em uma peça abre os detalhes: cor, tamanho, quantidade, carrinho e compra. */
+/* VITRINE 3D — trilho de cabides interativo (mouse + toque no celular).
+   As peças caem no varão; passando o mouse ou deslizando o dedo, a peça mais próxima gira 3D e vira de frente.
+   Tocar em uma peça abre os detalhes: cor ao vivo, tamanho, quantidade, carrinho e compra. */
 (function () {
   "use strict";
   var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -11,8 +11,8 @@
   var host = $("#vitrine"), lista = [], garms = [], focoX = null, agendado = false, primeira = true, hashFeito = false;
   var rail, legenda, det, atual = 0, corIdx = 0, tamSel = "", voltaFoco = null;
 
-  /* ---------- Cores e desenho das peças (usado quando não há foto) ---------- */
-  var HEX = { preta: "#111318", preto: "#111318", branca: "#f1f2f4", branco: "#f1f2f4", cinza: "#8b9099", chumbo: "#3a3f47", grafite: "#2b2f36", vermelha: "#c1272d", vermelho: "#c1272d", azul: "#1f4fb4", marinho: "#14213d", verde: "#1e7a4a", amarela: "#e6b800", amarelo: "#e6b800", laranja: "#e8742a", rosa: "#e86a9a", roxa: "#6b3fa0", roxo: "#6b3fa0", bege: "#d8c8a8", marrom: "#6b4a2f", prata: "#c4c9d2", off: "#e8e4da" };
+  /* ---------- Cores e modelagem 3D das peças (quando não há foto PNG) ---------- */
+  var HEX = { preta: "#14171d", preto: "#14171d", branca: "#f1f2f4", branco: "#f1f2f4", cinza: "#8b9099", chumbo: "#3a3f47", grafite: "#2b2f36", vermelha: "#c1272d", vermelho: "#c1272d", azul: "#1f4fb4", marinho: "#14213d", verde: "#1e7a4a", amarela: "#e6b800", amarelo: "#e6b800", laranja: "#e8742a", rosa: "#e86a9a", roxa: "#6b3fa0", roxo: "#6b3fa0", bege: "#d8c8a8", marrom: "#6b4a2f", prata: "#c4c9d2", off: "#e8e4da" };
   function norm(s) { return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
   function hexDe(nome) {
     var n = norm(nome), m = /#([0-9a-f]{6})/.exec(n); if (m) return "#" + m[1];
@@ -62,14 +62,16 @@
     box.innerHTML = ""; box.appendChild(im); im.src = url;
   }
 
-  /* ---------- Trilho ---------- */
+  /* ---------- Trilho / Arara 3D ---------- */
   var CABIDE = '<svg class="cabide" viewBox="0 0 120 44" aria-hidden="true" focusable="false"><path d="M60 3a8 8 0 1 1 8 8c-4 0-8 3-8 8v5L6 40h108L60 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   function render(l) {
     lista = l;
     if (!rail) {
       host.innerHTML = DEFS + '<div class="rail3d" id="rail3d" role="list" aria-label="Peças da loja"><div class="row"></div></div><div class="legenda" aria-live="polite"></div>';
       rail = $("#rail3d"); legenda = $(".legenda", host);
-      rail.addEventListener("scroll", agenda, { passive: true }); addEventListener("resize", agenda);
+      rail.addEventListener("scroll", agenda, { passive: true });
+      addEventListener("resize", agenda);
+      legenda.addEventListener("click", function (e) { var b = e.target.closest("[data-open]"); if (b) abrir(+b.dataset.open); });
     }
     var row = $(".row", rail);
     if (!l.length) { row.innerHTML = '<p class="vazio">Nenhuma peça encontrada.</p>'; garms = []; legenda.innerHTML = ""; return; }
@@ -85,19 +87,24 @@
   function agenda() { if (!agendado) { agendado = true; requestAnimationFrame(atualizar); } }
   function atualizar() {
     agendado = false; if (!rail || !garms.length) return;
-    var r = rail.getBoundingClientRect(), fx = focoX == null ? r.left + r.width / 2 : focoX, span = Math.max(150, Math.min(340, r.width * 0.3)), best = 9, bi = 0;
+    var r = rail.getBoundingClientRect(), fx = focoX == null ? r.left + r.width / 2 : focoX, span = Math.max(140, Math.min(320, r.width * 0.28)), best = 9, bi = 0;
     garms.forEach(function (g, i) {
       var b = g.getBoundingClientRect(), d = Math.max(-1, Math.min(1, (b.left + b.width / 2 - fx) / span)), ad = Math.abs(d);
-      g.style.setProperty("--ry", (reduce ? 0 : d * 64).toFixed(1) + "deg");
-      g.style.setProperty("--sc", (1 + 0.2 * (1 - ad)).toFixed(3));
+      g.style.setProperty("--ry", (reduce ? 0 : d * 68).toFixed(1) + "deg");
+      g.style.setProperty("--sc", (1 + 0.18 * (1 - ad)).toFixed(3));
       g.style.zIndex = Math.round((1 - ad) * 10);
       if (ad < best) { best = ad; bi = i; }
     });
     garms.forEach(function (g, i) { g.classList.toggle("foco", i === bi); });
-    var p = lista[bi]; legenda.innerHTML = "<b>" + esc(p.nome) + "</b><span>" + C().money(p.preco) + "</span><small>Toque na peça para ver os detalhes</small>";
+    var p = lista[bi];
+    legenda.innerHTML = "<b>" + esc(p.nome) + "</b><span>" + C().money(p.preco) + '</span><button type="button" class="btn ghost sm" data-open="' + bi + '">Ver detalhes e comprar</button>';
   }
+
+  /* Mouse no PC e deslize do dedo no celular */
   host.addEventListener("pointermove", function (e) { if (e.pointerType !== "touch") { focoX = e.clientX; agenda(); } });
   host.addEventListener("pointerleave", function () { focoX = null; agenda(); });
+  host.addEventListener("touchstart", function (e) { if (e.touches && e.touches[0]) { focoX = e.touches[0].clientX; agenda(); } }, { passive: true });
+  host.addEventListener("touchmove", function (e) { if (e.touches && e.touches[0]) { focoX = e.touches[0].clientX; agenda(); } }, { passive: true });
   host.addEventListener("focusin", function (e) { var g = e.target.closest && e.target.closest(".gar"); if (g) { var b = g.getBoundingClientRect(); focoX = b.left + b.width / 2; agenda(); } });
   host.addEventListener("click", function (e) { var g = e.target.closest(".gar"); if (g) abrir(+g.dataset.i); });
 
@@ -124,16 +131,17 @@
     st.addEventListener("pointermove", function (e) { var r = st.getBoundingClientRect(); sw.style.setProperty("--tx", (((e.clientX - r.left) / r.width) - 0.5).toFixed(2)); sw.style.setProperty("--ty", (((e.clientY - r.top) / r.height) - 0.5).toFixed(2)); });
     st.addEventListener("pointerleave", function () { sw.style.setProperty("--tx", 0); sw.style.setProperty("--ty", 0); });
   }
-  function abrir(i, troca) {
+  function abrir(i) {
     if (!lista.length) return; if (!det) criaDetalhe();
-    atual = (i + lista.length) % lista.length; corIdx = 0; tamSel = "";
+    atual = (i + lista.length) % lista.length; corIdx = 0;
     var p = lista[atual], cores = p.cores || [], tams = p.tamanhos || [], off = p.indisponiveis || [];
+    tamSel = tams.length === 1 && off.indexOf(tams[0]) < 0 ? tams[0] : "";
     $(".idx", det).textContent = (atual + 1) + " / " + lista.length + (p.categoria ? " · " + p.categoria : "");
     $(".dnome", det).textContent = p.nome; $(".dpreco", det).textContent = C().money(p.preco); $(".ddesc", det).textContent = p.descricao || "";
     var gc = $('[data-g="cor"]', det), gt = $('[data-g="tam"]', det); gc.hidden = !cores.length; gt.hidden = !tams.length;
     $(".sw", det).innerHTML = cores.map(function (c, k) { return '<button type="button" class="swb" data-cor="' + k + '" aria-label="' + esc(c) + '" aria-pressed="' + (k === 0) + '" style="--c:' + hexDe(c) + '"></button>'; }).join("");
     $(".cnome", det).textContent = cores[0] || "";
-    $(".tg", det).innerHTML = tams.map(function (t) { var x = off.indexOf(t) >= 0; return '<button type="button" data-tam="' + esc(t) + '" aria-pressed="false"' + (x ? ' disabled title="Esgotado"' : "") + ">" + esc(t) + "</button>"; }).join("");
+    $(".tg", det).innerHTML = tams.map(function (t) { var x = off.indexOf(t) >= 0; return '<button type="button" data-tam="' + esc(t) + '" aria-pressed="' + (t === tamSel) + '"' + (x ? ' disabled title="Esgotado"' : "") + ">" + esc(t) + "</button>"; }).join("");
     $(".dq", det).value = 1; var m = $(".dmsg", det); m.textContent = ""; m.className = "dmsg";
     $("#detN", det).textContent = $("#cartN").textContent;
     $(".dshare", det).href = "https://wa.me/?text=" + encodeURIComponent(p.nome + " — " + location.href.split("#")[0] + "#produto=" + p.id);
