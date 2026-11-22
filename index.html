@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Team Lobo Store | Roupas esportivas</title>
-<meta name="description" content="Roupas esportivas e de academia da Team Lobo. Escolha no trilho 3D, pague com Pix ou cartão.">
+<meta name="description" content="Roupas esportivas e de academia da Team Lobo. Compre com Pix, cartão de crédito ou débito.">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="assets/teamlobo.jpg">
 <script>try{var s=localStorage.getItem("tl-theme");document.documentElement.dataset.theme=s||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){document.documentElement.dataset.theme="dark"}</script>
@@ -25,22 +25,32 @@
 <main id="conteudo">
   <section class="hero"><div class="wrap">
     <h1>Roupas esportivas <span class="chrome">Team Lobo</span></h1>
-    <p>Passe o mouse ou deslize no trilho para virar a peça de frente. Toque para escolher cor, tamanho e finalizar com Pix ou cartão.</p>
+    <p>Passe o mouse ou deslize o dedo na arara para virar as peças de frente. Toque para escolher cor, tamanho e finalizar com Pix ou cartão.</p>
+    <a class="btn" href="#produtos">Explorar arara</a>
   </div></section>
 
   <section id="produtos"><div class="wrap">
-    <div class="bar"><div class="chips" id="cats" role="group" aria-label="Categorias"></div>
-      <select id="ord" aria-label="Ordenar"><option value="novos">Novidades</option><option value="menor">Menor preço</option><option value="maior">Maior preço</option></select></div>
-    <div id="vitrine" aria-live="polite"></div>
+    <div class="bar">
+      <div class="chips" id="cats" role="group" aria-label="Categorias"></div>
+      <select id="ord" aria-label="Ordenar">
+        <option value="novos">Novidades</option>
+        <option value="menor">Menor preço</option>
+        <option value="maior">Maior preço</option>
+      </select>
+    </div>
+    <div id="vitrine" class="vitrine"></div>
   </div></section>
 
   <section class="how"><div class="wrap">
     <h2>Como comprar</h2>
-    <ol><li><b>1</b><h3>Explore o trilho</h3><p>Passe o mouse ou deslize com o dedo para girar a peça de frente.</p></li>
-        <li><b>2</b><h3>Escolha e pague</h3><p>Toque na peça, selecione cor e tamanho e pague com Pix (QR code) ou cartão.</p></li>
-        <li><b>3</b><h3>Receba o comprovante</h3><p>Quando a loja confirmar o pagamento, o comprovante em PDF chega no seu e-mail.</p></li></ol>
+    <ol>
+      <li><b>1</b><h3>Escolha na arara</h3><p>Deslize pelas peças penduradas e toque na que você quer para ver cores e tamanhos.</p></li>
+      <li><b>2</b><h3>Pague</h3><p>Preencha seus dados e pague com Pix (QR code), crédito ou débito.</p></li>
+      <li><b>3</b><h3>Receba o comprovante</h3><p>Quando a loja confirmar o pagamento, o comprovante de venda chega no seu e-mail.</p></li>
+    </ol>
   </div></section>
 </main>
+
 <footer><div class="wrap"><p id="rodape"></p><p><a id="oficial2" href="#" target="_blank" rel="noopener">Site oficial da Team Lobo</a> · <a id="zap" href="#" target="_blank" rel="noopener">Falar com a loja no WhatsApp</a></p></div></footer>
 
 <dialog id="dlgCart" aria-label="Carrinho"><button class="x" type="button" data-close aria-label="Fechar">✕</button><div id="cartBody"></div></dialog>
@@ -74,10 +84,11 @@
     </form>
   </div>
 </dialog>
+
 <script src="vendor/qrcode.js"></script>
 <script src="config.js?v=3"></script>
 <script src="produtos.js?v=3"></script>
-<script src="vitrine3d.js?v=3"></script>
 <script src="app.js?v=3"></script>
+<script src="vitrine3d.js?v=3"></script>
 </body>
 </html>
