@@ -1,7 +1,41 @@
-/* VITRINE 3D WEBGL (THREE.JS) — Team Lobo Store
-   - Apenas a roupa pendurada em cabide metálico cromado 3D (sem boneco).
-   - Deslize Esquerda / Direita: troca entre as 4 roupas no carrossel 3D com desfoque lateral.
-   - Deslize Cima / Baixo (ou clique na peça / botão): gira a roupa + cabide 180° (Frente ↔ Costas). */
+/* VITRINE 3D — trilho de cabides.
+   As peças "caem" no trilho; passando o mouse (ou o dedo) a peça mais próxima gira e vira de frente.
+   Tocar em uma peça abre os detalhes: cor, tamanho, quantidade, carrinho e compra. */
+/* Remove o fundo liso de uma foto (canvas) e corta nas bordas da peça. Devolve um canvas novo, ou null se não for seguro. */
+function recortaCanvas(cv) {
+  var w = cv.width, h = cv.height, ctx = cv.getContext("2d"), im = ctx.getImageData(0, 0, w, h), d = im.data, i, x, y, p;
+  var n = 0, r = 0, g = 0, b = 0, borda = [];
+  for (x = 0; x < w; x += 3) { borda.push(x, (h - 1) * w + x); }
+  for (y = 0; y < h; y += 3) { borda.push(y * w, y * w + w - 1); }
+  for (i = 0; i < borda.length; i++) { p = borda[i] * 4; if (d[p + 3] < 250) return null; r += d[p]; g += d[p + 1]; b += d[p + 2]; n++; }
+  r /= n; g /= n; b /= n;
+  var dist = function (q) { var dr = d[q] - r, dg = d[q + 1] - g, db = d[q + 2] - b; return Math.sqrt(dr * dr + dg * dg + db * db); };
+  var ruim = 0; for (i = 0; i < borda.length; i++) if (dist(borda[i] * 4) > 40) ruim++;
+  if (ruim / n > 0.2) return null;                       // fundo não é liso
+  var TOL = 34, bg = new Uint8Array(w * h), fila = new Int32Array(w * h), ini = 0, fim = 0;
+  var tenta = function (q) { if (!bg[q] && dist(q * 4) < TOL) { bg[q] = 1; fila[fim++] = q; } };
+  for (x = 0; x < w; x++) { tenta(x); tenta((h - 1) * w + x); } for (y = 0; y < h; y++) { tenta(y * w); tenta(y * w + w - 1); }
+  while (ini < fim) { p = fila[ini++]; x = p % w; y = (p / w) | 0; if (x > 0) tenta(p - 1); if (x < w - 1) tenta(p + 1); if (y > 0) tenta(p - w); if (y < h - 1) tenta(p + w); }
+  var cx0 = Math.floor(w * 0.3), cx1 = Math.floor(w * 0.7), cy0 = Math.floor(h * 0.3), cy1 = Math.floor(h * 0.7), dentro = 0, tot = 0;
+  for (y = cy0; y < cy1; y += 2) for (x = cx0; x < cx1; x += 2) { tot++; if (bg[y * w + x]) dentro++; }
+  if (dentro / tot > 0.2) return null;                   // o fundo "vazou" para dentro da peça (ex.: peça branca em fundo branco)
+  var x0 = w, y0 = h, x1 = 0, y1 = 0;
+  for (p = 0; p < w * h; p++) {
+    i = p * 4; x = p % w; y = (p / w) | 0;
+    if (bg[p]) { d[i + 3] = 0; continue; }
+    if ((x > 0 && bg[p - 1]) || (x < w - 1 && bg[p + 1]) || (y > 0 && bg[p - w]) || (y < h - 1 && bg[p + w])) {
+      d[i + 3] = Math.round(255 * Math.min(1, Math.max(0, (dist(i) - TOL * 0.6) / (TOL * 1.2))));   // borda suave
+    }
+    if (d[i + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  }
+  if (x1 <= x0 || y1 <= y0 || (x1 - x0) * (y1 - y0) < w * h * 0.05) return null;
+  ctx.putImageData(im, 0, 0);
+  var m = Math.round(Math.max(x1 - x0, y1 - y0) * 0.02), out = document.createElement("canvas");
+  out.width = x1 - x0 + 1 + 2 * m; out.height = y1 - y0 + 1 + 2 * m;
+  out.getContext("2d").drawImage(cv, x0, y0, x1 - x0 + 1, y1 - y0 + 1, m, m, x1 - x0 + 1, y1 - y0 + 1);
+  return out;
+}
+
 (function () {
   "use strict";
   var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -9,711 +43,188 @@
   var $$ = function (s, c) { return Array.prototype.slice.call((c || document).querySelectorAll(s)); };
   var C = function () { return window.LojaCore; };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  var host = $("#vitrine"), lista = [], garms = [], focoX = null, agendado = false, primeira = true, hashFeito = false;
+  var rail, legenda, det, atual = 0, corIdx = 0, tamSel = "", voltaFoco = null;
 
-  var host = $("#vitrine");
-  var lista = [], centerIdx = 0, isBack = false, dragRotOffset = 0;
-  var selecao = {}; // { [id]: { corIdx: 0, tam: "M" } }
-  var scenes = [], rafId = 0;
-
-  /* ---------- Paleta de cores ---------- */
-  var HEX = {
-    preta: "#14161a", preto: "#14161a", branca: "#f0f2f5", branco: "#f0f2f5",
-    cinza: "#8c939e", chumbo: "#363b44", grafite: "#282c33",
-    vermelha: "#b82329", vermelho: "#b82329", azul: "#1d4aa8", marinho: "#14213d",
-    verde: "#1c7245", amarela: "#dfb100", amarelo: "#dfb100", laranja: "#e06d24",
-    rosa: "#df6291", roxa: "#653b96", roxo: "#653b96", bege: "#d4c3a3",
-    marrom: "#63442b", prata: "#c4c9d2", off: "#e8e4da"
-  };
-
+  /* ---------- Cores e desenho das peças (usado quando não há foto) ---------- */
+  var HEX = { preta: "#111318", preto: "#111318", branca: "#f1f2f4", branco: "#f1f2f4", cinza: "#8b9099", chumbo: "#3a3f47", grafite: "#2b2f36", vermelha: "#c1272d", vermelho: "#c1272d", azul: "#1f4fb4", marinho: "#14213d", verde: "#1e7a4a", amarela: "#e6b800", amarelo: "#e6b800", laranja: "#e8742a", rosa: "#e86a9a", roxa: "#6b3fa0", roxo: "#6b3fa0", bege: "#d8c8a8", marrom: "#6b4a2f", prata: "#c4c9d2", off: "#e8e4da" };
   function norm(s) { return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
   function hexDe(nome) {
-    var n = norm(nome), m = /#([0-9a-f]{6})/.exec(n);
-    if (m) return "#" + m[1];
+    var n = norm(nome), m = /#([0-9a-f]{6})/.exec(n); if (m) return "#" + m[1];
     var w = n.split(/[^a-z]+/).filter(Boolean);
     for (var i = 0; i < w.length; i++) if (HEX[w[i]]) return HEX[w[i]];
-    return "#14161a";
+    var h = 0; for (var k = 0; k < n.length; k++) h = (h * 31 + n.charCodeAt(k)) % 360;
+    return "hsl(" + h + " 38% 42%)";
   }
-  function claro(hex) {
-    var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/.exec(hex);
-    if (!m) return false;
-    return (0.299 * parseInt(m[1], 16) + 0.587 * parseInt(m[2], 16) + 0.114 * parseInt(m[3], 16)) / 255 > 0.62;
-  }
+  function claro(hex) { var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/.exec(hex); if (!m) return false; return (0.299 * parseInt(m[1], 16) + 0.587 * parseInt(m[2], 16) + 0.114 * parseInt(m[3], 16)) / 255 > 0.62; }
   function tipoDe(p) {
-    var s = norm((p.id || "") + " " + (p.nome || "") + " " + (p.categoria || ""));
-    if (/camiseta-lobo|top|cropped|alcinha|blusa/.test(s)) return "top-alcinha";
-    if (/regata|tank/.test(s)) return "regata";
-    if (/short|bermuda/.test(s)) return "shorts";
-    if (/moletom|casaco|jaqueta|hoodie/.test(s)) return "moletom";
-    return "camiseta";
+    var s = norm(p.nome + " " + p.categoria);
+    if (/regata|tank/.test(s)) return "regata"; if (/short|bermuda/.test(s)) return "shorts";
+    if (/moletom|casaco|jaqueta|hoodie/.test(s)) return "moletom"; if (/bone|viseira/.test(s)) return "bone";
+    if (/legging|calca/.test(s)) return "calca"; return "camiseta";
   }
-
-  /* ---------- Textura de micro-trama esportiva + Logos Team Lobo ---------- */
-  var weaveBumpTex = null;
-  function getWeaveBump() {
-    if (weaveBumpTex) return weaveBumpTex;
-    var cv = document.createElement("canvas");
-    cv.width = 64; cv.height = 64;
-    var ctx = cv.getContext("2d");
-    ctx.fillStyle = "#808080";
-    ctx.fillRect(0, 0, 64, 64);
-    for (var y = 0; y < 64; y += 2) {
-      for (var x = 0; x < 64; x += 2) {
-        ctx.fillStyle = ((x + y) % 4 === 0) ? "#969696" : "#6a6a6a";
-        ctx.fillRect(x, y, 1, 1);
-      }
-    }
-    weaveBumpTex = new THREE.CanvasTexture(cv);
-    weaveBumpTex.wrapS = THREE.RepeatWrapping;
-    weaveBumpTex.wrapT = THREE.RepeatWrapping;
-    weaveBumpTex.repeat.set(22, 22);
-    return weaveBumpTex;
+  var FORMAS = {
+    camiseta: "M60 20L10 55L30 92L55 80V200H145V80L170 92L190 55L140 20Q100 46 60 20Z",
+    regata: "M62 18V56Q62 82 42 102L48 200H152L158 102Q138 82 138 56V18H118Q100 52 82 18Z",
+    shorts: "M42 20H158L172 150H108L100 84L92 150H28Z",
+    moletom: "M72 20Q100 4 128 20L172 42L192 150L164 158L154 104V204H46V104L36 158L8 150L28 42Z",
+    calca: "M60 12H140L150 44L130 206H106L100 74L94 206H70L50 44Z",
+    bone: "M28 112Q28 42 100 42Q172 42 172 112V122H28Z"
+  };
+  var DEFS = '<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>' +
+    '<linearGradient id="lb-shade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".18"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".3"/></linearGradient>' +
+    '<linearGradient id="lb-chrome" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".5" stop-color="#a7b1bf"/><stop offset="1" stop-color="#5a6472"/></linearGradient>' +
+    '</defs></svg>';
+  var PRINT = { camiseta: [79, 80, 42, 50], regata: [80, 84, 40, 47], moletom: [80, 86, 40, 47], bone: [84, 62, 32, 38], shorts: [46, 34, 22, 26] };
+  function arteSvg(p, cor) {
+    var t = tipoDe(p), hex = hexDe(cor), st = ' stroke="rgba(0,0,0,.3)" stroke-width="1.5" stroke-linejoin="round"';
+    var s = '<svg class="art" viewBox="0 0 200 220" aria-hidden="true" focusable="false">';
+    if (t === "bone") s += '<path d="M14 124Q100 158 186 124L198 138Q100 188 2 138Z" fill="' + hex + '"' + st + '/><path d="M14 124Q100 158 186 124L198 138Q100 188 2 138Z" fill="rgba(0,0,0,.25)"/>';
+    s += '<path d="' + FORMAS[t] + '" fill="' + hex + '"' + st + '/><path d="' + FORMAS[t] + '" fill="url(#lb-shade)"/>';
+    if (t === "camiseta") s += '<path d="M60 20Q100 46 140 20Q100 33 60 20Z" fill="rgba(0,0,0,.3)"/>';
+    if (t === "moletom") s += '<path d="M72 20Q100 60 128 20Q100 8 72 20Z" fill="rgba(0,0,0,.32)"/><path d="M93 44V76M107 44V76" stroke="rgba(255,255,255,.55)" stroke-width="2.4" stroke-linecap="round" fill="none"/>';
+    if (t === "shorts") s += '<path d="M42 20H158L160 34H40Z" fill="rgba(0,0,0,.22)"/>';
+    var pr = PRINT[t];
+    if (pr) s += '<image href="assets/lobo.webp" x="' + pr[0] + '" y="' + pr[1] + '" width="' + pr[2] + '" height="' + pr[3] + '"' + (claro(hex) ? ' style="filter:brightness(.08)"' : "") + "/>"; // lobo prateado (preto em peças claras)
+    return s + "</svg>";
   }
-
-  function drawWolfSilhouette(ctx, cx, cy, scale, color) {
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.scale(scale, scale);
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    // Silhueta exata do lobo uivando para a direita (camiseta-lobo.png)
-    ctx.moveTo(-36, 56);
-    ctx.lineTo(-24, 24);
-    ctx.lineTo(-34, 14);
-    ctx.lineTo(-18, -4);
-    ctx.lineTo(-36, -14);
-    ctx.lineTo(-10, -24);
-    ctx.lineTo(-14, -46);
-    ctx.lineTo(-4, -68);
-    ctx.lineTo(6, -44);
-    ctx.lineTo(18, -50);
-    ctx.lineTo(44, -76);
-    ctx.lineTo(49, -70);
-    ctx.lineTo(32, -52);
-    ctx.lineTo(50, -58);
-    ctx.lineTo(28, -32);
-    ctx.lineTo(34, -22);
-    ctx.lineTo(26, -14);
-    ctx.lineTo(35, -6);
-    ctx.lineTo(28, 4);
-    ctx.lineTo(38, 14);
-    ctx.lineTo(31, 24);
-    ctx.lineTo(40, 34);
-    ctx.lineTo(20, 48);
-    ctx.lineTo(8, 66);
-    ctx.lineTo(2, 48);
-    ctx.lineTo(-14, 52);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
+  function fotoDe(p, i) { var f = p.fotos || []; if (!f.length) return ""; return ((p.cores || []).length > 1 && f.length === p.cores.length) ? f[i] : f[0]; }
+  var limpas = {};   // fotos já recortadas (guardadas para não refazer)
+  /* Fotos do próprio site com fundo liso ganham recorte automático. Fotos de outros endereços (ex.: Drive) já chegam recortadas do cadastro. */
+  function limpa(im, url, cb) {
+    if (limpas[url] !== undefined) return cb(limpas[url]);
+    var r = null;
+    try {
+      var s = Math.min(1, 900 / Math.max(im.naturalWidth, im.naturalHeight)), cv = document.createElement("canvas");
+      cv.width = Math.round(im.naturalWidth * s); cv.height = Math.round(im.naturalHeight * s);
+      cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height);
+      var o = recortaCanvas(cv); if (o) r = o.toDataURL("image/png");
+    } catch (e) { /* imagem de outro endereço: o navegador não deixa ler os pixels */ }
+    limpas[url] = r; cb(r);
   }
-
-  function makeTopFrontTexture(lightFabric) {
-    var cv = document.createElement("canvas");
-    cv.width = 1024; cv.height = 512;
-    var ctx = cv.getContext("2d");
-    var ink = lightFabric ? "#121419" : "#dce1e8";
-
-    ctx.fillStyle = ink;
-    ctx.font = "italic 900 94px 'Barlow Condensed', 'Arial Narrow', sans-serif";
-    ctx.textBaseline = "middle";
-
-    ctx.textAlign = "right";
-    ctx.fillText("TEAM", 442, 266);
-
-    ctx.textAlign = "left";
-    ctx.fillText("LOBO", 582, 266);
-
-    drawWolfSilhouette(ctx, 512, 258, 1.05, ink);
-
-    var tex = new THREE.CanvasTexture(cv);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 4;
-    return tex;
-  }
-
-  function makeChestCrestTexture(lightFabric) {
-    var cv = document.createElement("canvas");
-    cv.width = 512; cv.height = 512;
-    var ctx = cv.getContext("2d");
-    var ink = lightFabric ? "#121419" : "#e2e7ee";
-    drawWolfSilhouette(ctx, 256, 210, 1.85, ink);
-    ctx.fillStyle = ink;
-    ctx.font = "italic 900 62px 'Barlow Condensed', Arial, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("TEAM LOBO", 256, 395);
-    var tex = new THREE.CanvasTexture(cv);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
-  }
-
-  /* ---------- Cabide Metálico Cromado 3D ---------- */
-  function buildHanger3D(widthScale, yTop) {
-    var hanger = new THREE.Group();
-    var chromeMat = new THREE.MeshStandardMaterial({
-      color: 0xe6ebf2,
-      metalness: 0.90,
-      roughness: 0.18
-    });
-    var darkChromeMat = new THREE.MeshStandardMaterial({
-      color: 0x9aa3b0,
-      metalness: 0.85,
-      roughness: 0.25
-    });
-
-    var w = 0.62 * (widthScale || 1);
-    var neckY = yTop;
-
-    // 1. Gancho superior giratório
-    var hookCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, neckY, 0),
-      new THREE.Vector3(0, neckY + 0.14, 0),
-      new THREE.Vector3(-0.08, neckY + 0.23, 0),
-      new THREE.Vector3(-0.06, neckY + 0.35, 0),
-      new THREE.Vector3(0.05, neckY + 0.38, 0),
-      new THREE.Vector3(0.11, neckY + 0.30, 0),
-      new THREE.Vector3(0.07, neckY + 0.23, 0)
-    ]);
-    hanger.add(new THREE.Mesh(new THREE.TubeGeometry(hookCurve, 36, 0.015, 10, false), chromeMat));
-
-    // Anel/colar na base do gancho
-    var collar = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.030, 0.055, 16), darkChromeMat);
-    collar.position.set(0, neckY, 0);
-    hanger.add(collar);
-
-    // 2. Corpo triangular do cabide com cavas para alcinhas
-    var bodyCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, neckY - 0.02, 0),
-      new THREE.Vector3(-w * 0.45, neckY - 0.11, 0),
-      new THREE.Vector3(-w * 0.68, neckY - 0.17, 0), // cava esquerda da alça
-      new THREE.Vector3(-w * 0.72, neckY - 0.15, 0),
-      new THREE.Vector3(-w, neckY - 0.24, 0),
-      new THREE.Vector3(-w * 0.96, neckY - 0.33, 0),
-      new THREE.Vector3(0, neckY - 0.33, 0),
-      new THREE.Vector3(w * 0.96, neckY - 0.33, 0),
-      new THREE.Vector3(w, neckY - 0.24, 0),
-      new THREE.Vector3(w * 0.72, neckY - 0.15, 0),
-      new THREE.Vector3(w * 0.68, neckY - 0.17, 0), // cava direita da alça
-      new THREE.Vector3(w * 0.45, neckY - 0.11, 0),
-      new THREE.Vector3(0, neckY - 0.02, 0)
-    ], true);
-    hanger.add(new THREE.Mesh(new THREE.TubeGeometry(bodyCurve, 64, 0.017, 10, true), chromeMat));
-
-    return hanger;
-  }
-
-  /* ---------- Construtores 3D das Roupas no Cabide ---------- */
-  function buildGarmentOnHanger3D(tipo, hexColor) {
-    var rootGroup = new THREE.Group();
-    var isLight = claro(hexColor);
-
-    var fabricMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(hexColor),
-      roughness: 0.60,
-      metalness: 0.10,
-      bumpMap: getWeaveBump(),
-      bumpScale: 0.0035,
-      side: THREE.DoubleSide
-    });
-
-    var trimMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(hexColor).multiplyScalar(isLight ? 0.92 : 1.18),
-      roughness: 0.55,
-      metalness: 0.12
-    });
-
-    if (tipo === "top-alcinha") {
-      /* === TOP CROPPED DE ALCINHA TEAM LOBO (406929.png) NO CABIDE 3D === */
-      rootGroup.add(buildHanger3D(1.0, 1.16));
-
-      var topH = 0.70;
-      var centerY = 0.28; // topo em y = 0.63, barra em y = -0.07
-      var topGeo = new THREE.CylinderGeometry(0.57, 0.50, topH, 72, 28, true);
-      var pos = topGeo.attributes.position;
-
-      for (var i = 0; i < pos.count; i++) {
-        var x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-        var ny = y / (topH * 0.5); // -1 (barra) a +1 (decote)
-
-        // Perfil anatômico da blusa pendurada (largura x profundidade)
-        z *= 0.52;
-
-        // Volume frontal do busto (z > 0) e costas limpas (z < 0)
-        if (z > 0) {
-          var bust = Math.exp(-Math.pow((Math.abs(x) - 0.21) / 0.24, 2)) * Math.exp(-Math.pow((ny - 0.05) / 0.55, 2));
-          z += bust * 0.095;
-        } else {
-          z -= 0.015 * Math.exp(-Math.pow(ny / 0.65, 2));
-        }
-
-        // Decote frontal suavemente curvado (igual à foto camiseta-lobo.png)
-        if (ny > 0.2) {
-          var tTop = (ny - 0.2) / 0.8;
-          var arch = Math.cos(Math.min(1, Math.abs(x) / 0.56) * Math.PI * 0.5);
-          var scoop = (z >= 0 ? 0.048 : 0.028) * arch * tTop;
-          y -= scoop;
-        }
-
-        pos.setXYZ(i, x, y, z);
-      }
-      topGeo.computeVertexNormals();
-      var bodyMesh = new THREE.Mesh(topGeo, fabricMat);
-      bodyMesh.position.y = centerY;
-      rootGroup.add(bodyMesh);
-
-      // Viés (acabamento em relevo) contornando todo o decote superior (frente e costas)
-      var neckPts = [];
-      for (var s = 0; s <= 64; s++) {
-        var ang = (s / 64) * Math.PI * 2;
-        var nx = Math.sin(ang) * 0.57;
-        var nz = Math.cos(ang) * 0.57 * 0.52;
-        if (nz > 0) {
-          var nb = Math.exp(-Math.pow((Math.abs(nx) - 0.21) / 0.24, 2)) * Math.exp(-Math.pow(0.95 / 0.55, 2));
-          nz += nb * 0.095;
-        }
-        var nArch = Math.cos(Math.min(1, Math.abs(nx) / 0.56) * Math.PI * 0.5);
-        var nyTop = centerY + (topH * 0.5) - ((nz >= 0 ? 0.048 : 0.028) * nArch);
-        neckPts.push(new THREE.Vector3(nx, nyTop, nz));
-      }
-      var neckPipe = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(neckPts, true), 72, 0.013, 8, true);
-      rootGroup.add(new THREE.Mesh(neckPipe, trimMat));
-
-      // Barra dupla inferior (duas costuras paralelas na cintura, igual à foto)
-      [-0.068, -0.032].forEach(function (by, idx) {
-        var hemGeo = new THREE.TorusGeometry(0.502 + idx * 0.003, idx === 0 ? 0.011 : 0.007, 10, 64);
-        hemGeo.rotateX(Math.PI / 2);
-        hemGeo.scale(1, 1, 0.52);
-        var hem = new THREE.Mesh(hemGeo, trimMat);
-        hem.position.y = by;
-        rootGroup.add(hem);
+  function montaArte(box, p, i) {
+    var cor = (p.cores && p.cores[i]) || "", url = fotoDe(p, i), svg = function () { box.classList.remove("shine"); box.innerHTML = arteSvg(p, cor); };
+    if (!url) return svg();
+    var im = new Image(); im.alt = ""; im.decoding = "async"; im.className = "art"; im.onerror = svg;
+    im.onload = function () {
+      if (im.dataset.ok) return; im.dataset.ok = "1";   // evita recarregar em loop
+      limpa(im, url, function (r) {
+        box.style.setProperty("--img", 'url("' + (r || url) + '")'); box.classList.add("shine");
+        if (r) im.src = r;                                  // troca pela versão sem fundo
       });
-
-      // Duas alças finas apoiadas exatamente nas cavas do cabide 3D (x = ±0.425)
-      [-0.425, 0.425].forEach(function (sx) {
-        var strapCurve = new THREE.CatmullRomCurve3([
-          new THREE.Vector3(sx, 0.60, 0.22),
-          new THREE.Vector3(sx, 0.84, 0.13),
-          new THREE.Vector3(sx, 0.99, 0.02),
-          new THREE.Vector3(sx, 0.99, -0.02),
-          new THREE.Vector3(sx, 0.84, -0.13),
-          new THREE.Vector3(sx, 0.61, -0.22)
-        ]);
-        var strapGeo = new THREE.TubeGeometry(strapCurve, 32, 0.014, 8, false);
-        rootGroup.add(new THREE.Mesh(strapGeo, trimMat));
-      });
-
-      // Estampa frontal "TEAM [Lobo] LOBO" curvada sobre o busto
-      var logoGeo = new THREE.CylinderGeometry(0.575, 0.54, 0.34, 40, 1, true, -0.68, 1.36);
-      var lPos = logoGeo.attributes.position;
-      for (var j = 0; j < lPos.count; j++) {
-        var lx = lPos.getX(j), ly = lPos.getY(j), lz = lPos.getZ(j) * 0.525;
-        var lny = ly / (topH * 0.5);
-        var lb = Math.exp(-Math.pow((Math.abs(lx) - 0.21) / 0.24, 2)) * Math.exp(-Math.pow((lny - 0.05) / 0.55, 2));
-        lPos.setXYZ(j, lx, ly, lz + lb * 0.098 + 0.008);
-      }
-      logoGeo.computeVertexNormals();
-      var logoMat = new THREE.MeshBasicMaterial({
-        map: makeTopFrontTexture(isLight),
-        transparent: true,
-        depthWrite: false
-      });
-      var logoMesh = new THREE.Mesh(logoGeo, logoMat);
-      logoMesh.position.y = centerY - 0.02;
-      rootGroup.add(logoMesh);
-
-    } else if (tipo === "camiseta" || tipo === "regata") {
-      /* === CAMISETA OU REGATA ESPORTIVA NO CABIDE 3D === */
-      rootGroup.add(buildHanger3D(1.08, 1.24));
-
-      var bodyGeo = new THREE.CylinderGeometry(0.62, 0.57, 1.42, 48, 16, true);
-      bodyGeo.scale(1, 1, 0.54);
-      var bodyMesh = new THREE.Mesh(bodyGeo, fabricMat);
-      bodyMesh.position.y = 0.24;
-      rootGroup.add(bodyMesh);
-
-      var collarGeo = new THREE.TorusGeometry(0.25, 0.026, 12, 32);
-      collarGeo.rotateX(Math.PI / 2.15);
-      var collar = new THREE.Mesh(collarGeo, trimMat);
-      collar.position.set(0, 0.94, 0.03);
-      rootGroup.add(collar);
-
-      if (tipo === "camiseta") {
-        [-0.73, 0.73].forEach(function (sx, idx) {
-          var slv = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.20, 0.54, 24, 1, true), fabricMat);
-          slv.position.set(sx, 0.71, 0);
-          slv.rotation.z = idx === 0 ? 0.52 : -0.52;
-          rootGroup.add(slv);
-        });
-      }
-
-      var cGeo = new THREE.CylinderGeometry(0.632, 0.618, 0.46, 32, 1, true, -0.46, 0.92);
-      cGeo.scale(1, 1, 0.55);
-      var cMat = new THREE.MeshBasicMaterial({ map: makeChestCrestTexture(isLight), transparent: true, depthWrite: false });
-      var cMesh = new THREE.Mesh(cGeo, cMat);
-      cMesh.position.y = 0.52;
-      rootGroup.add(cMesh);
-
-    } else {
-      /* === SHORTS DE TREINO NO CABIDE 3D === */
-      rootGroup.add(buildHanger3D(0.95, 1.04));
-
-      // Presilhas do cabide segurando o cós
-      [-0.44, 0.44].forEach(function (cx) {
-        var clip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.11, 0.06), trimMat);
-        clip.position.set(cx, 0.67, 0);
-        rootGroup.add(clip);
-      });
-
-      var sWaist = new THREE.Mesh(new THREE.CylinderGeometry(0.54, 0.58, 0.40, 44, 1, true), fabricMat);
-      sWaist.scale.set(1, 1, 0.56);
-      sWaist.position.y = 0.44;
-      rootGroup.add(sWaist);
-
-      [-0.28, 0.28].forEach(function (lx, idx) {
-        var sLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.28, 0.64, 32, 1, true), fabricMat);
-        sLeg.scale.set(1, 1, 0.78);
-        sLeg.position.set(lx, -0.05, 0);
-        sLeg.rotation.z = idx === 0 ? -0.05 : 0.05;
-        rootGroup.add(sLeg);
-      });
-
-      var scGeo = new THREE.CylinderGeometry(0.305, 0.29, 0.32, 24, 1, true, -0.42, 0.84);
-      scGeo.scale(1, 1, 0.80);
-      var scMat = new THREE.MeshBasicMaterial({ map: makeChestCrestTexture(isLight), transparent: true, depthWrite: false });
-      var scMesh = new THREE.Mesh(scGeo, scMat);
-      scMesh.position.set(0.28, -0.14, 0.01);
-      scMesh.rotation.y = 0.20;
-      rootGroup.add(scMesh);
-    }
-
-    return rootGroup;
-  }
-
-  /* ---------- Renderizadores WebGL ---------- */
-  function disposeScenes() {
-    cancelAnimationFrame(rafId);
-    scenes.forEach(function (s) { if (s.renderer) s.renderer.dispose(); });
-    scenes = [];
-  }
-
-  function createCardViewer(container, p, idx) {
-    if (!window.THREE) {
-      container.innerHTML = '<div style="padding:1rem;text-align:center"><b>' + esc(p.nome) + '</b></div>';
-      return null;
-    }
-    var w = 340, h = 480;
-    var renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(w, h, false);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    container.innerHTML = "";
-    container.appendChild(renderer.domElement);
-
-    var scene = new THREE.Scene();
-    var camera = new THREE.PerspectiveCamera(32, w / h, 0.1, 20);
-    camera.position.set(0, 0.56, 4.35);
-
-    // Iluminação de estúdio para destacar o brilho do cabide cromado e a textura da blusa
-    scene.add(new THREE.AmbientLight(0xffffff, 0.90));
-    var key = new THREE.DirectionalLight(0xffffff, 1.45);
-    key.position.set(2.2, 3.5, 3.6);
-    scene.add(key);
-    var rim = new THREE.DirectionalLight(0xe2e8f0, 0.95);
-    rim.position.set(-2.6, 2.2, -3.2);
-    scene.add(rim);
-    var fill = new THREE.DirectionalLight(0xffffff, 0.50);
-    fill.position.set(0, -2.2, 2.4);
-    scene.add(fill);
-
-    var st = getSel(p);
-    var corInicial = (p.cores && p.cores[st.corIdx]) || "Preta";
-    var tipo = tipoDe(p);
-    var pivot = new THREE.Group();
-    pivot.add(buildGarmentOnHanger3D(tipo, hexDe(corInicial)));
-    scene.add(pivot);
-
-    return {
-      idx: idx,
-      produto: p,
-      tipo: tipo,
-      renderer: renderer,
-      scene: scene,
-      camera: camera,
-      pivot: pivot,
-      currentRotY: 0,
-      setColor: function (hex) {
-        while (pivot.children.length) pivot.remove(pivot.children[0]);
-        pivot.add(buildGarmentOnHanger3D(tipo, hex));
-      }
     };
+    box.innerHTML = ""; box.appendChild(im); im.src = url;
   }
 
-  function animateLoop(t) {
-    rafId = requestAnimationFrame(animateLoop);
-    var sec = (t || 0) * 0.001;
-    scenes.forEach(function (sc) {
-      var isCenter = sc.idx === centerIdx;
-      var targetY = (isCenter && isBack ? Math.PI : 0) + (isCenter ? dragRotOffset : 0);
-      sc.currentRotY += (targetY - sc.currentRotY) * 0.16;
-      sc.pivot.rotation.y = sc.currentRotY;
-      // Balanço leve natural no cabide
-      sc.pivot.rotation.z = isCenter && !reduce ? Math.sin(sec * 1.8) * 0.018 : 0;
-      sc.renderer.render(sc.scene, sc.camera);
-    });
-  }
-
-  function getSel(p) {
-    if (!selecao[p.id]) {
-      var tams = p.tamanhos || [];
-      selecao[p.id] = { corIdx: 0, tam: tams[0] || "" };
+  /* ---------- Trilho ---------- */
+  var CABIDE = '<svg class="cabide" viewBox="0 0 120 44" aria-hidden="true" focusable="false"><path d="M60 3a8 8 0 1 1 8 8c-4 0-8 3-8 8v5L6 40h108L60 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  function render(l) {
+    lista = l;
+    if (!rail) {
+      host.innerHTML = DEFS + '<div class="rail3d" id="rail3d" role="list" aria-label="Peças da loja"><div class="row"></div></div><div class="legenda" aria-live="polite"></div>';
+      rail = $("#rail3d"); legenda = $(".legenda", host);
+      rail.addEventListener("scroll", agenda, { passive: true }); addEventListener("resize", agenda);
     }
-    return selecao[p.id];
-  }
-
-  /* ---------- Montagem da Vitrine ---------- */
-  function render(produtos) {
-    disposeScenes();
-    lista = produtos;
-    centerIdx = Math.min(centerIdx, Math.max(0, lista.length - 1));
-    isBack = false;
-    dragRotOffset = 0;
-
-    if (!lista.length) {
-      host.innerHTML = '<p class="vazio">Nenhuma peça encontrada.</p>';
-      return;
-    }
-
-    host.innerHTML =
-      '<div class="look-studio">' +
-        '<div class="look-stage" id="lookStage">' +
-          '<div class="stage-top">' +
-            '<button type="button" class="side-pill" id="btnFlipSide" aria-label="Virar peça frente e costas"><span class="side-dot"></span><span id="sideLabel">Vista: Frente · Girar ↻</span></button>' +
-            '<span class="stage-hint">← → Troca peça · ↑ ↓ Vira costas</span>' +
-          '</div>' +
-          '<div class="look-track" id="lookTrack" role="region" aria-label="Arara 3D interativa"></div>' +
-          '<div class="stage-foot">' +
-            '<button type="button" class="nav-arrow" id="prevLook" aria-label="Peça anterior">‹</button>' +
-            '<div class="dots" id="lookDots"></div>' +
-            '<button type="button" class="nav-arrow" id="nextLook" aria-label="Próxima peça">›</button>' +
-          '</div>' +
-        '</div>' +
-        '<aside class="look-panel" id="lookPanel" aria-label="Detalhes da peça selecionada"></aside>' +
-      '</div>';
-
-    var track = $("#lookTrack", host);
-    track.innerHTML = lista.map(function (p, i) {
-      return '<div class="look-card" role="button" tabindex="0" data-look="' + i + '" aria-label="' + esc(p.nome) + '">' +
-        (p.novo ? '<span class="look-badge">Novo</span>' : "") +
-        '<div class="model-box" id="mbox-' + i + '"></div>' +
-      '</div>';
+    var row = $(".row", rail);
+    if (!l.length) { row.innerHTML = '<p class="vazio">Nenhuma peça encontrada.</p>'; garms = []; legenda.innerHTML = ""; return; }
+    row.classList.toggle("drop", primeira);
+    row.innerHTML = l.map(function (p, i) {
+      return '<button class="gar" type="button" role="listitem" data-i="' + i + '" style="--i:' + i + '" aria-label="' + esc(p.nome + ", " + C().money(p.preco)) + '"><span class="hang">' + CABIDE + '<span class="swing"><span class="artbox"></span>' + (p.novo ? '<span class="tag">Novo</span>' : "") + "</span></span></button>";
     }).join("");
-
-    $("#lookDots", host).innerHTML = lista.map(function (p, i) {
-      return '<button type="button" class="dot" data-dot="' + i + '" aria-label="Ver ' + esc(p.nome) + '"></button>';
-    }).join("");
-
-    lista.forEach(function (p, i) {
-      var viewer = createCardViewer($("#mbox-" + i, host), p, i);
-      if (viewer) scenes.push(viewer);
-    });
-
-    bindEvents();
-    atualizarPosicoes3D();
-    atualizarPainel();
-    animateLoop(0);
+    garms = $$(".gar", row);
+    garms.forEach(function (g, i) { montaArte($(".artbox", g), l[i], 0); });
+    primeira = false; agenda();
+    if (!hashFeito) { hashFeito = true; var m = /#produto=([^&]+)/.exec(location.hash); if (m) { var id = decodeURIComponent(m[1]); for (var k = 0; k < l.length; k++) if (l[k].id === id) { abrir(k); break; } } }
   }
-
-  function atualizarPosicoes3D() {
-    var pill = $("#btnFlipSide", host);
-    var lbl = $("#sideLabel", host);
-    if (pill && lbl) {
-      pill.classList.toggle("is-back", isBack);
-      lbl.textContent = isBack ? "Vista: Costas · Ver frente ↻" : "Vista: Frente · Ver costas ↻";
-    }
-
-    var mobile = window.innerWidth <= 860;
-    var stepX = mobile ? 145 : 200;
-
-    $$(".look-card", host).forEach(function (card, i) {
-      var off = i - centerIdx;
-      var abs = Math.abs(off);
-      card.style.zIndex = String(20 - abs);
-
-      var tx = off * stepX;
-      var tz = -abs * 140;
-      var ry = reduce ? 0 : Math.max(-28, Math.min(28, -off * 14));
-      var sc = Math.max(0.66, 1 - abs * 0.16);
-      var op = abs > 2 ? 0 : Math.max(0.45, 1 - abs * 0.24);
-      var bl = reduce ? 0 : Math.min(7, abs * 3.2);
-
-      card.style.setProperty("--tx", tx + "px");
-      card.style.setProperty("--tz", tz + "px");
-      card.style.setProperty("--ry", ry + "deg");
-      card.style.setProperty("--sc", sc.toFixed(3));
-      card.style.setProperty("--op", op.toFixed(2));
-      card.style.setProperty("--bl", bl.toFixed(1) + "px");
-      card.style.pointerEvents = abs > 2 ? "none" : "auto";
+  function agenda() { if (!agendado) { agendado = true; requestAnimationFrame(atualizar); } }
+  function atualizar() {
+    agendado = false; if (!rail || !garms.length) return;
+    var r = rail.getBoundingClientRect(), fx = focoX == null ? r.left + r.width / 2 : focoX, span = Math.max(150, Math.min(340, r.width * 0.3)), best = 9, bi = 0;
+    garms.forEach(function (g, i) {
+      var b = g.getBoundingClientRect(), d = Math.max(-1, Math.min(1, (b.left + b.width / 2 - fx) / span)), ad = Math.abs(d);
+      g.style.setProperty("--ry", (reduce ? 0 : d * 64).toFixed(1) + "deg");
+      g.style.setProperty("--sc", (1 + 0.2 * (1 - ad)).toFixed(3));
+      g.style.setProperty("--rn", (reduce ? 0 : d * 64).toFixed(1));
+      g.style.zIndex = Math.round((1 - ad) * 10);
+      if (ad < best) { best = ad; bi = i; }
     });
-
-    $$(".dot", host).forEach(function (d, i) {
-      d.setAttribute("aria-current", i === centerIdx ? "true" : "false");
-    });
+    garms.forEach(function (g, i) { g.classList.toggle("foco", i === bi); });
+    var p = lista[bi]; legenda.innerHTML = "<b>" + esc(p.nome) + "</b><span>" + C().money(p.preco) + "</span><small>Toque na peça para ver os detalhes</small>";
   }
+  host.addEventListener("pointermove", function (e) { if (e.pointerType !== "touch") { focoX = e.clientX; agenda(); } });
+  host.addEventListener("pointerleave", function () { focoX = null; agenda(); });
+  host.addEventListener("focusin", function (e) { var g = e.target.closest && e.target.closest(".gar"); if (g) { var b = g.getBoundingClientRect(); focoX = b.left + b.width / 2; agenda(); } });
+  host.addEventListener("click", function (e) { var g = e.target.closest(".gar"); if (g) abrir(+g.dataset.i); });
 
-  function atualizarPainel() {
-    var panel = $("#lookPanel", host);
-    var p = lista[centerIdx];
-    if (!panel || !p) return;
-
-    var st = getSel(p);
-    var cores = p.cores || [];
-    var tams = p.tamanhos || [];
-    var corAtual = cores[st.corIdx] || "";
-
-    var swHtml = cores.length ? '<div class="piece-row"><span class="piece-label">Cor: <b>' + esc(corAtual) + '</b></span><div class="sw-row">' +
-      cores.map(function (c, k) {
-        return '<button type="button" class="sw-dot" data-cor="' + k + '" aria-label="Cor ' + esc(c) + '" aria-pressed="' + (k === st.corIdx) + '" style="--c:' + hexDe(c) + '"></button>';
-      }).join("") + '</div></div>' : "";
-
-    var tamHtml = tams.length ? '<div class="piece-row"><span class="piece-label">Tamanho</span><div class="tam-row">' +
-      tams.map(function (t) {
-        return '<button type="button" class="tam-pill" data-tam="' + esc(t) + '" aria-pressed="' + (t === st.tam) + '">' + esc(t) + '</button>';
-      }).join("") + '</div></div>' : "";
-
-    panel.innerHTML =
-      '<div>' +
-        '<div class="panel-head">' +
-          '<div>' +
-            '<span class="panel-kicker">Peça ' + (centerIdx + 1) + ' de ' + lista.length + (p.categoria ? ' · ' + esc(p.categoria) : '') + '</span>' +
-            '<h2 class="panel-title">' + esc(p.nome) + '</h2>' +
-            '<p class="panel-sub">' + esc(p.descricao || "") + '</p>' +
-          '</div>' +
-          '<span class="panel-total">' + C().money(p.preco) + '</span>' +
-        '</div>' +
-        '<div class="piece-card">' + swHtml + tamHtml + '</div>' +
-      '</div>' +
-      '<div class="panel-foot">' +
-        '<p class="panel-msg" id="panelMsg" role="status"></p>' +
-        '<div class="panel-actions">' +
-          '<button type="button" class="btn" id="addLookBtn">Adicionar à sacola</button>' +
-          '<button type="button" class="btn ghost" id="buyLookBtn">Comprar</button>' +
-        '</div>' +
-      '</div>';
-  }
-
-  function irPara(idx) {
-    if (!lista.length) return;
-    centerIdx = (idx + lista.length) % lista.length;
-    isBack = false;
-    dragRotOffset = 0;
-    atualizarPosicoes3D();
-    atualizarPainel();
-  }
-
-  function bindEvents() {
-    var track = $("#lookTrack", host);
-    var startX = null, startY = null, axis = null, moved = false, lastDy = 0;
-
-    track.addEventListener("pointerdown", function (e) {
-      startX = e.clientX;
-      startY = e.clientY;
-      axis = null;
-      moved = false;
-      lastDy = 0;
-      if (track.setPointerCapture) {
-        try { track.setPointerCapture(e.pointerId); } catch (err) {}
-      }
+  /* ---------- Detalhes (tela cheia com fundo desfocado) ---------- */
+  function criaDetalhe() {
+    det = document.createElement("div"); det.className = "det"; det.hidden = true;
+    det.setAttribute("role", "dialog"); det.setAttribute("aria-modal", "true"); det.setAttribute("aria-label", "Detalhes da peça");
+    det.innerHTML = '<div class="dtop"><button type="button" class="dlink" data-a="fechar">Fechar ✕</button><button type="button" class="dlink" data-a="carrinho">Carrinho <b id="detN">0</b></button></div>' +
+      '<div class="dbody"><div class="dstage"><button class="nv" type="button" data-a="prev" aria-label="Peça anterior">‹</button><div class="hang2">' + CABIDE.replace('class="cabide"', 'class="cabide big"') + '<div class="swing2"><div class="artbox big"></div></div></div><button class="nv" type="button" data-a="next" aria-label="Próxima peça">›</button></div>' +
+      '<div class="dinfo"><small class="idx"></small><h2 class="dnome"></h2><p class="dpreco"></p><p class="ddesc"></p>' +
+      '<div class="dgrp" data-g="cor"><span>Cor: <b class="cnome"></b></span><div class="sw"></div></div><div class="dgrp" data-g="tam"><span>Tamanho</span><div class="tg"></div></div>' +
+      '<label class="dqty">Quantidade <input class="dq" type="number" min="1" max="10" value="1"></label>' +
+      '<div class="dacts"><button class="btn" type="button" data-a="add">Adicionar ao carrinho</button><button class="btn ghost" type="button" data-a="buy">Comprar agora</button></div><p class="dmsg" role="status"></p><a class="dshare" target="_blank" rel="noopener">Compartilhar no WhatsApp</a></div></div>';
+    document.body.appendChild(det);
+    det.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-a],[data-cor],[data-tam]"); if (!b) return;
+      if (b.dataset.cor != null) return trocaCor(+b.dataset.cor);
+      if (b.dataset.tam != null) { if (b.disabled) return; tamSel = b.dataset.tam; $$(".tg button", det).forEach(function (x) { x.setAttribute("aria-pressed", x === b); }); $(".dmsg", det).textContent = ""; return; }
+      var a = b.dataset.a;
+      if (a === "fechar") fechar(); else if (a === "prev") abrir(atual - 1, true); else if (a === "next") abrir(atual + 1, true);
+      else if (a === "carrinho") { fechar(); C().abrirCarrinho(); } else if (a === "add") comprar(false); else if (a === "buy") comprar(true);
     });
-
-    track.addEventListener("pointermove", function (e) {
-      if (startX == null || startY == null) return;
-      var dx = e.clientX - startX;
-      var dy = e.clientY - startY;
-
-      if (!axis && Math.hypot(dx, dy) > 12) {
-        axis = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
-        moved = true;
-      }
-
-      if (axis === "x" && Math.abs(dx) > 44) {
-        startX = e.clientX;
-        irPara(centerIdx + (dx < 0 ? 1 : -1));
-      } else if (axis === "y") {
-        lastDy = dy;
-        dragRotOffset = Math.max(-Math.PI, Math.min(Math.PI, (-dy / 160) * Math.PI));
-      }
-    });
-
-    var finishGesture = function (e) {
-      if (axis === "y" && Math.abs(lastDy) > 32) {
-        isBack = !isBack;
-        atualizarPosicoes3D();
-      } else if (!moved && e && e.target) {
-        var card = e.target.closest(".look-card");
-        if (card) {
-          var idx = +card.dataset.look;
-          if (idx !== centerIdx) irPara(idx);
-          else { isBack = !isBack; atualizarPosicoes3D(); }
-        }
-      }
-      startX = null;
-      startY = null;
-      axis = null;
-      dragRotOffset = 0;
-    };
-
-    track.addEventListener("pointerup", finishGesture);
-    track.addEventListener("pointercancel", function () { startX = null; startY = null; axis = null; dragRotOffset = 0; });
-
-    host.addEventListener("click", function (e) {
-      if (e.target.closest("#btnFlipSide")) { isBack = !isBack; atualizarPosicoes3D(); return; }
-      if (e.target.closest("#prevLook")) { irPara(centerIdx - 1); return; }
-      if (e.target.closest("#nextLook")) { irPara(centerIdx + 1); return; }
-
-      var dot = e.target.closest("[data-dot]");
-      if (dot) { irPara(+dot.dataset.dot); return; }
-
-      var sw = e.target.closest("[data-cor]");
-      if (sw) {
-        var p = lista[centerIdx];
-        var st = getSel(p);
-        st.corIdx = +sw.dataset.cor;
-        var sc = scenes[centerIdx];
-        if (sc) sc.setColor(hexDe(p.cores[st.corIdx]));
-        atualizarPainel();
-        return;
-      }
-
-      var tm = e.target.closest("[data-tam]");
-      if (tm) {
-        var p2 = lista[centerIdx];
-        getSel(p2).tam = tm.dataset.tam;
-        atualizarPainel();
-        return;
-      }
-
-      if (e.target.closest("#addLookBtn") || e.target.closest("#buyLookBtn")) {
-        var buyNow = !!e.target.closest("#buyLookBtn");
-        var peca = lista[centerIdx];
-        var sel = getSel(peca);
-        C().adicionar(peca.id, sel.tam, (peca.cores && peca.cores[sel.corIdx]) || "", 1);
-        if (buyNow) {
-          C().abrirCheckout();
-        } else {
-          var msg = $("#panelMsg", host);
-          if (msg) { msg.className = "panel-msg ok"; msg.textContent = peca.nome + " adicionada à sacola ✓"; }
-        }
-      }
-    });
-
-    window.addEventListener("resize", atualizarPosicoes3D);
+    var st = $(".dstage", det), sw = $(".swing2", det);
+    st.addEventListener("pointermove", function (e) { var r = st.getBoundingClientRect(); sw.style.setProperty("--tx", (((e.clientX - r.left) / r.width) - 0.5).toFixed(2)); sw.style.setProperty("--ty", (((e.clientY - r.top) / r.height) - 0.5).toFixed(2)); });
+    st.addEventListener("pointerleave", function () { sw.style.setProperty("--tx", 0); sw.style.setProperty("--ty", 0); });
   }
-
+  function abrir(i, troca) {
+    if (!lista.length) return; if (!det) criaDetalhe();
+    atual = (i + lista.length) % lista.length; corIdx = 0; tamSel = "";
+    var p = lista[atual], cores = p.cores || [], tams = p.tamanhos || [], off = p.indisponiveis || [];
+    $(".idx", det).textContent = (atual + 1) + " / " + lista.length + (p.categoria ? " · " + p.categoria : "");
+    $(".dnome", det).textContent = p.nome; $(".dpreco", det).textContent = C().money(p.preco); $(".ddesc", det).textContent = p.descricao || "";
+    var gc = $('[data-g="cor"]', det), gt = $('[data-g="tam"]', det); gc.hidden = !cores.length; gt.hidden = !tams.length;
+    $(".sw", det).innerHTML = cores.map(function (c, k) { return '<button type="button" class="swb" data-cor="' + k + '" aria-label="' + esc(c) + '" aria-pressed="' + (k === 0) + '" style="--c:' + hexDe(c) + '"></button>'; }).join("");
+    $(".cnome", det).textContent = cores[0] || "";
+    $(".tg", det).innerHTML = tams.map(function (t) { var x = off.indexOf(t) >= 0; return '<button type="button" data-tam="' + esc(t) + '" aria-pressed="false"' + (x ? ' disabled title="Esgotado"' : "") + ">" + esc(t) + "</button>"; }).join("");
+    $(".dq", det).value = 1; var m = $(".dmsg", det); m.textContent = ""; m.className = "dmsg";
+    $("#detN", det).textContent = $("#cartN").textContent;
+    $(".dshare", det).href = "https://wa.me/?text=" + encodeURIComponent(p.nome + " — " + location.href.split("#")[0] + "#produto=" + p.id);
+    montaArte($(".artbox.big", det), p, 0);
+    var h = $(".hang2", det); h.classList.remove("in"); void h.offsetWidth; h.classList.add("in");
+    if (det.hidden) { voltaFoco = document.activeElement; det.hidden = false; document.documentElement.classList.add("trava"); $('[data-a="fechar"]', det).focus(); }
+    try { history.replaceState(null, "", "#produto=" + encodeURIComponent(p.id)); } catch (e) {}
+  }
+  function fechar() {
+    if (!det || det.hidden) return; det.hidden = true; document.documentElement.classList.remove("trava");
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+    if (voltaFoco && voltaFoco.focus) voltaFoco.focus();
+  }
+  function trocaCor(k) {
+    var p = lista[atual]; corIdx = k;
+    $$(".swb", det).forEach(function (b, n) { b.setAttribute("aria-pressed", n === k); }); $(".cnome", det).textContent = p.cores[k];
+    montaArte($(".artbox.big", det), p, k);
+    var s = $(".swing2", det); s.classList.remove("troca"); void s.offsetWidth; s.classList.add("troca");
+  }
+  function comprar(agora) {
+    var p = lista[atual], m = $(".dmsg", det);
+    if ((p.tamanhos || []).length && !tamSel) { m.textContent = "Escolha um tamanho."; m.className = "dmsg erro"; var b = $(".tg button:not([disabled])", det); if (b) b.focus(); return; }
+    C().adicionar(p.id, tamSel, (p.cores && p.cores[corIdx]) || "", Math.max(1, Math.min(10, +$(".dq", det).value || 1)));
+    $("#detN", det).textContent = $("#cartN").textContent;
+    if (agora) { fechar(); C().abrirCheckout(); return; }
+    m.className = "dmsg ok"; m.textContent = "Adicionado ao carrinho ✓";
+    var n = $("#detN", det); n.classList.remove("bump"); void n.offsetWidth; n.classList.add("bump");
+  }
   document.addEventListener("keydown", function (e) {
-    if (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
-    if (e.key === "ArrowLeft") irPara(centerIdx - 1);
-    else if (e.key === "ArrowRight") irPara(centerIdx + 1);
-    else if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); isBack = !isBack; atualizarPosicoes3D(); }
+    if (!det || det.hidden) return;
+    if (e.key === "Escape") fechar(); else if (e.key === "ArrowLeft") abrir(atual - 1, true); else if (e.key === "ArrowRight") abrir(atual + 1, true);
+    else if (e.key === "Tab") {
+      var f = $$("button:not([disabled]),a[href],input", det).filter(function (x) { return x.offsetParent !== null; });
+      if (!f.length) return; var a = f[0], z = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); } else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+    }
   });
-
-  window.Vitrine = { render: render };
+  window.Vitrine = { render: render, abrir: abrir, fechar: fechar };
 })();
