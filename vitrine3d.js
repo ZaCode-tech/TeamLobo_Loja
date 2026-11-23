@@ -1,7 +1,9 @@
-/* VITRINE 3D — trilho de cabides.
-   As peças "caem" no trilho; passando o mouse (ou o dedo) a peça mais próxima gira e vira de frente.
-   Tocar em uma peça abre os detalhes: cor, tamanho, quantidade, carrinho e compra. */
-/* Remove o fundo liso de uma foto (canvas) e corta nas bordas da peça. Devolve um canvas novo, ou null se não for seguro. */
+/* VITRINE 3D WEBGL (THREE.JS) — Team Lobo Store
+   - Transforma as imagens de assets/produtos/ (Frente + Costas) em modelos 3D pendurados no cabide cromado 3D.
+   - Arrastar para o lado (← →): gira a peça de lado em 3D e troca a seleção de roupa.
+   - Arrastar para cima/baixo (↑ ↓) ou tocar na peça: gira 180° mostrando Frente e Costas. */
+
+/* Remove fundo liso automaticamente caso a imagem enviada não seja PNG transparente */
 function recortaCanvas(cv) {
   var w = cv.width, h = cv.height, ctx = cv.getContext("2d"), im = ctx.getImageData(0, 0, w, h), d = im.data, i, x, y, p;
   var n = 0, r = 0, g = 0, b = 0, borda = [];
@@ -11,22 +13,22 @@ function recortaCanvas(cv) {
   r /= n; g /= n; b /= n;
   var dist = function (q) { var dr = d[q] - r, dg = d[q + 1] - g, db = d[q + 2] - b; return Math.sqrt(dr * dr + dg * dg + db * db); };
   var ruim = 0; for (i = 0; i < borda.length; i++) if (dist(borda[i] * 4) > 40) ruim++;
-  if (ruim / n > 0.2) return null;                       // fundo não é liso
+  if (ruim / n > 0.2) return null;
   var TOL = 34, bg = new Uint8Array(w * h), fila = new Int32Array(w * h), ini = 0, fim = 0;
   var tenta = function (q) { if (!bg[q] && dist(q * 4) < TOL) { bg[q] = 1; fila[fim++] = q; } };
   for (x = 0; x < w; x++) { tenta(x); tenta((h - 1) * w + x); } for (y = 0; y < h; y++) { tenta(y * w); tenta(y * w + w - 1); }
   while (ini < fim) { p = fila[ini++]; x = p % w; y = (p / w) | 0; if (x > 0) tenta(p - 1); if (x < w - 1) tenta(p + 1); if (y > 0) tenta(p - w); if (y < h - 1) tenta(p + w); }
   var cx0 = Math.floor(w * 0.3), cx1 = Math.floor(w * 0.7), cy0 = Math.floor(h * 0.3), cy1 = Math.floor(h * 0.7), dentro = 0, tot = 0;
   for (y = cy0; y < cy1; y += 2) for (x = cx0; x < cx1; x += 2) { tot++; if (bg[y * w + x]) dentro++; }
-  if (dentro / tot > 0.2) return null;                   // o fundo "vazou" para dentro da peça (ex.: peça branca em fundo branco)
+  if (dentro / tot > 0.2) return null;
   var x0 = w, y0 = h, x1 = 0, y1 = 0;
   for (p = 0; p < w * h; p++) {
     i = p * 4; x = p % w; y = (p / w) | 0;
     if (bg[p]) { d[i + 3] = 0; continue; }
     if ((x > 0 && bg[p - 1]) || (x < w - 1 && bg[p + 1]) || (y > 0 && bg[p - w]) || (y < h - 1 && bg[p + w])) {
-      d[i + 3] = Math.round(255 * Math.min(1, Math.max(0, (dist(i) - TOL * 0.6) / (TOL * 1.2))));   // borda suave
+      d[i + 3] = Math.round(255 * Math.min(1, Math.max(0, (dist(i) - TOL * 0.6) / (TOL * 1.2))));
     }
-    if (d[i + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (d[i + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y < y1) y1 = y; }
   }
   if (x1 <= x0 || y1 <= y0 || (x1 - x0) * (y1 - y0) < w * h * 0.05) return null;
   ctx.putImageData(im, 0, 0);
@@ -43,188 +45,866 @@ function recortaCanvas(cv) {
   var $$ = function (s, c) { return Array.prototype.slice.call((c || document).querySelectorAll(s)); };
   var C = function () { return window.LojaCore; };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
-  var host = $("#vitrine"), lista = [], garms = [], focoX = null, agendado = false, primeira = true, hashFeito = false;
-  var rail, legenda, det, atual = 0, corIdx = 0, tamSel = "", voltaFoco = null;
 
-  /* ---------- Cores e desenho das peças (usado quando não há foto) ---------- */
-  var HEX = { preta: "#111318", preto: "#111318", branca: "#f1f2f4", branco: "#f1f2f4", cinza: "#8b9099", chumbo: "#3a3f47", grafite: "#2b2f36", vermelha: "#c1272d", vermelho: "#c1272d", azul: "#1f4fb4", marinho: "#14213d", verde: "#1e7a4a", amarela: "#e6b800", amarelo: "#e6b800", laranja: "#e8742a", rosa: "#e86a9a", roxa: "#6b3fa0", roxo: "#6b3fa0", bege: "#d8c8a8", marrom: "#6b4a2f", prata: "#c4c9d2", off: "#e8e4da" };
+  var host = $("#vitrine");
+  var lista = [], centerIdx = 0, isBack = false, dragRotOffset = 0, dragShift = 0;
+  var selecao = {};
+  var scenes = [], rafId = 0, pendingList = null;
+
+  /* Garante que o Three.js esteja carregado mesmo se o index.html ainda não tiver a tag script */
+  function ensureThree(cb) {
+    if (window.THREE) return cb();
+    var existing = document.querySelector('script[data-three-loader]');
+    if (existing) {
+      existing.addEventListener("load", cb, { once: true });
+      return;
+    }
+    var s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js";
+    s.setAttribute("data-three-loader", "1");
+    s.onload = cb;
+    document.head.appendChild(s);
+  }
+
+  /* ---------- Cores ---------- */
+  var HEX = {
+    preta: "#14161a", preto: "#14161a", branca: "#f0f2f5", branco: "#f0f2f5",
+    cinza: "#8c939e", chumbo: "#363b44", grafite: "#282c33",
+    vermelha: "#b82329", vermelho: "#b82329", azul: "#1d4aa8", marinho: "#14213d",
+    verde: "#1c7245", amarela: "#dfb100", amarelo: "#dfb100", laranja: "#e06d24",
+    rosa: "#df6291", roxa: "#653b96", roxo: "#653b96", bege: "#d4c3a3",
+    marrom: "#63442b", prata: "#c4c9d2", off: "#e8e4da"
+  };
+
   function norm(s) { return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
   function hexDe(nome) {
-    var n = norm(nome), m = /#([0-9a-f]{6})/.exec(n); if (m) return "#" + m[1];
+    var n = norm(nome), m = /#([0-9a-f]{6})/.exec(n);
+    if (m) return "#" + m[1];
     var w = n.split(/[^a-z]+/).filter(Boolean);
     for (var i = 0; i < w.length; i++) if (HEX[w[i]]) return HEX[w[i]];
-    var h = 0; for (var k = 0; k < n.length; k++) h = (h * 31 + n.charCodeAt(k)) % 360;
-    return "hsl(" + h + " 38% 42%)";
+    return "#14161a";
   }
-  function claro(hex) { var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/.exec(hex); if (!m) return false; return (0.299 * parseInt(m[1], 16) + 0.587 * parseInt(m[2], 16) + 0.114 * parseInt(m[3], 16)) / 255 > 0.62; }
+  function claro(hex) {
+    var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/.exec(hex);
+    if (!m) return false;
+    return (0.299 * parseInt(m[1], 16) + 0.587 * parseInt(m[2], 16) + 0.114 * parseInt(m[3], 16)) / 255 > 0.62;
+  }
   function tipoDe(p) {
-    var s = norm(p.nome + " " + p.categoria);
-    if (/regata|tank/.test(s)) return "regata"; if (/short|bermuda/.test(s)) return "shorts";
-    if (/moletom|casaco|jaqueta|hoodie/.test(s)) return "moletom"; if (/bone|viseira/.test(s)) return "bone";
-    if (/legging|calca/.test(s)) return "calca"; return "camiseta";
+    var s = norm((p.id || "") + " " + (p.nome || "") + " " + (p.categoria || ""));
+    if (/camiseta-lobo|top|cropped|alcinha|blusa/.test(s)) return "top-alcinha";
+    if (/regata|tank/.test(s)) return "regata";
+    if (/short|bermuda/.test(s)) return "shorts";
+    if (/moletom|casaco|jaqueta|hoodie/.test(s)) return "moletom";
+    return "camiseta";
   }
-  var FORMAS = {
-    camiseta: "M60 20L10 55L30 92L55 80V200H145V80L170 92L190 55L140 20Q100 46 60 20Z",
-    regata: "M62 18V56Q62 82 42 102L48 200H152L158 102Q138 82 138 56V18H118Q100 52 82 18Z",
-    shorts: "M42 20H158L172 150H108L100 84L92 150H28Z",
-    moletom: "M72 20Q100 4 128 20L172 42L192 150L164 158L154 104V204H46V104L36 158L8 150L28 42Z",
-    calca: "M60 12H140L150 44L130 206H106L100 74L94 206H70L50 44Z",
-    bone: "M28 112Q28 42 100 42Q172 42 172 112V122H28Z"
-  };
-  var DEFS = '<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>' +
-    '<linearGradient id="lb-shade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".18"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".3"/></linearGradient>' +
-    '<linearGradient id="lb-chrome" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".5" stop-color="#a7b1bf"/><stop offset="1" stop-color="#5a6472"/></linearGradient>' +
-    '</defs></svg>';
-  var PRINT = { camiseta: [79, 80, 42, 50], regata: [80, 84, 40, 47], moletom: [80, 86, 40, 47], bone: [84, 62, 32, 38], shorts: [46, 34, 22, 26] };
-  function arteSvg(p, cor) {
-    var t = tipoDe(p), hex = hexDe(cor), st = ' stroke="rgba(0,0,0,.3)" stroke-width="1.5" stroke-linejoin="round"';
-    var s = '<svg class="art" viewBox="0 0 200 220" aria-hidden="true" focusable="false">';
-    if (t === "bone") s += '<path d="M14 124Q100 158 186 124L198 138Q100 188 2 138Z" fill="' + hex + '"' + st + '/><path d="M14 124Q100 158 186 124L198 138Q100 188 2 138Z" fill="rgba(0,0,0,.25)"/>';
-    s += '<path d="' + FORMAS[t] + '" fill="' + hex + '"' + st + '/><path d="' + FORMAS[t] + '" fill="url(#lb-shade)"/>';
-    if (t === "camiseta") s += '<path d="M60 20Q100 46 140 20Q100 33 60 20Z" fill="rgba(0,0,0,.3)"/>';
-    if (t === "moletom") s += '<path d="M72 20Q100 60 128 20Q100 8 72 20Z" fill="rgba(0,0,0,.32)"/><path d="M93 44V76M107 44V76" stroke="rgba(255,255,255,.55)" stroke-width="2.4" stroke-linecap="round" fill="none"/>';
-    if (t === "shorts") s += '<path d="M42 20H158L160 34H40Z" fill="rgba(0,0,0,.22)"/>';
-    var pr = PRINT[t];
-    if (pr) s += '<image href="assets/lobo.webp" x="' + pr[0] + '" y="' + pr[1] + '" width="' + pr[2] + '" height="' + pr[3] + '"' + (claro(hex) ? ' style="filter:brightness(.08)"' : "") + "/>"; // lobo prateado (preto em peças claras)
-    return s + "</svg>";
+
+  /* ---------- Resolução das 2 imagens (Frente e Costas) em assets/produtos/ ---------- */
+  function resolveFotoUrl(raw) {
+    if (!raw) return "";
+    raw = String(raw).trim();
+    if (/^(https?:|data:|blob:|\.\/|\/|assets\/)/i.test(raw)) return raw;
+    return "assets/produtos/" + raw;
   }
-  function fotoDe(p, i) { var f = p.fotos || []; if (!f.length) return ""; return ((p.cores || []).length > 1 && f.length === p.cores.length) ? f[i] : f[0]; }
-  var limpas = {};   // fotos já recortadas (guardadas para não refazer)
-  /* Fotos do próprio site com fundo liso ganham recorte automático. Fotos de outros endereços (ex.: Drive) já chegam recortadas do cadastro. */
-  function limpa(im, url, cb) {
-    if (limpas[url] !== undefined) return cb(limpas[url]);
-    var r = null;
-    try {
-      var s = Math.min(1, 900 / Math.max(im.naturalWidth, im.naturalHeight)), cv = document.createElement("canvas");
-      cv.width = Math.round(im.naturalWidth * s); cv.height = Math.round(im.naturalHeight * s);
-      cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height);
-      var o = recortaCanvas(cv); if (o) r = o.toDataURL("image/png");
-    } catch (e) { /* imagem de outro endereço: o navegador não deixa ler os pixels */ }
-    limpas[url] = r; cb(r);
+
+  function getImagePair(p, corIdx) {
+    var fotos = (p.fotos || []).map(resolveFotoUrl).filter(Boolean);
+    var frontUrl = "";
+    var backUrl = "";
+
+    if (p.fotoFrente || p.fotoCostas) {
+      frontUrl = resolveFotoUrl(p.fotoFrente);
+      backUrl = resolveFotoUrl(p.fotoCostas);
+    } else if (fotos.length >= 2) {
+      // Padrão da planilha (fotos separadas por "|"): fotos[0] = frente, fotos[1] = costas
+      // Ou pares por cor: [frenteCor0, costasCor0, frenteCor1, costasCor1...]
+      var coresLen = (p.cores || []).length;
+      if (coresLen > 1 && fotos.length >= coresLen * 2) {
+        frontUrl = fotos[corIdx * 2];
+        backUrl = fotos[corIdx * 2 + 1];
+      } else {
+        frontUrl = fotos[0];
+        backUrl = fotos[1];
+      }
+    } else if (fotos.length === 1) {
+      frontUrl = fotos[0];
+    } else {
+      frontUrl = "assets/produtos/" + p.id + ".png";
+    }
+
+    // Se não informou a URL de costas explicitamente, procura automaticamente "<nome>-costas.<ext>"
+    if (!backUrl && frontUrl && /\.(png|webp|jpe?g)(\?.*)?$/i.test(frontUrl)) {
+      backUrl = frontUrl.replace(/\.(png|webp|jpe?g)(\?.*)?$/i, "-costas.$1$2");
+    }
+    return { front: frontUrl, back: backUrl };
   }
-  function montaArte(box, p, i) {
-    var cor = (p.cores && p.cores[i]) || "", url = fotoDe(p, i), svg = function () { box.classList.remove("shine"); box.innerHTML = arteSvg(p, cor); };
-    if (!url) return svg();
-    var im = new Image(); im.alt = ""; im.decoding = "async"; im.className = "art"; im.onerror = svg;
-    im.onload = function () {
-      if (im.dataset.ok) return; im.dataset.ok = "1";   // evita recarregar em loop
-      limpa(im, url, function (r) {
-        box.style.setProperty("--img", 'url("' + (r || url) + '")'); box.classList.add("shine");
-        if (r) im.src = r;                                  // troca pela versão sem fundo
+
+  function loadCleanImage(url) {
+    return new Promise(function (resolve, reject) {
+      if (!url) return reject(new Error("empty"));
+      var img = new Image();
+      if (/^https?:/i.test(url) && url.indexOf(location.origin) !== 0) img.crossOrigin = "anonymous";
+      img.decoding = "async";
+      img.onload = function () {
+        try {
+          var s = Math.min(1, 900 / Math.max(img.naturalWidth, img.naturalHeight));
+          var cv = document.createElement("canvas");
+          cv.width = Math.round(img.naturalWidth * s);
+          cv.height = Math.round(img.naturalHeight * s);
+          cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+          var cut = recortaCanvas(cv);
+          if (cut) {
+            var cleanImg = new Image();
+            cleanImg.onload = function () { resolve(cleanImg); };
+            cleanImg.onerror = function () { resolve(img); };
+            cleanImg.src = cut.toDataURL("image/png");
+            return;
+          }
+        } catch (e) {}
+        resolve(img);
+      };
+      img.onerror = function () { reject(new Error("fail")); };
+      img.src = url;
+    });
+  }
+
+  /* ---------- Cabide Metálico Cromado 3D ---------- */
+  function buildHanger3D(halfSpan, yNeck, isBottomClip) {
+    var hanger = new THREE.Group();
+    var chromeMat = new THREE.MeshStandardMaterial({
+      color: 0xe8edf5,
+      metalness: 0.90,
+      roughness: 0.18
+    });
+    var darkChromeMat = new THREE.MeshStandardMaterial({
+      color: 0x9aa3b0,
+      metalness: 0.85,
+      roughness: 0.25
+    });
+
+    var w = Math.max(0.46, Math.min(0.76, halfSpan || 0.60));
+    var neckY = yNeck;
+
+    var hookCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, neckY, 0),
+      new THREE.Vector3(0, neckY + 0.13, 0),
+      new THREE.Vector3(-0.075, neckY + 0.22, 0),
+      new THREE.Vector3(-0.055, neckY + 0.34, 0),
+      new THREE.Vector3(0.05, neckY + 0.37, 0),
+      new THREE.Vector3(0.105, neckY + 0.29, 0),
+      new THREE.Vector3(0.065, neckY + 0.22, 0)
+    ]);
+    hanger.add(new THREE.Mesh(new THREE.TubeGeometry(hookCurve, 36, 0.015, 10, false), chromeMat));
+
+    var collar = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.029, 0.05, 16), darkChromeMat);
+    collar.position.set(0, neckY, 0);
+    hanger.add(collar);
+
+    var bodyCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, neckY - 0.02, 0),
+      new THREE.Vector3(-w * 0.48, neckY - 0.11, 0),
+      new THREE.Vector3(-w * 0.72, neckY - 0.17, 0),
+      new THREE.Vector3(-w, neckY - 0.24, 0),
+      new THREE.Vector3(-w * 0.96, neckY - 0.32, 0),
+      new THREE.Vector3(0, neckY - 0.32, 0),
+      new THREE.Vector3(w * 0.96, neckY - 0.32, 0),
+      new THREE.Vector3(w, neckY - 0.24, 0),
+      new THREE.Vector3(w * 0.72, neckY - 0.17, 0),
+      new THREE.Vector3(w * 0.48, neckY - 0.11, 0),
+      new THREE.Vector3(0, neckY - 0.02, 0)
+    ], true);
+    hanger.add(new THREE.Mesh(new THREE.TubeGeometry(bodyCurve, 64, 0.016, 10, true), chromeMat));
+
+    if (isBottomClip) {
+      [-w * 0.75, w * 0.75].forEach(function (cx) {
+        var clip = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.11, 0.055), darkChromeMat);
+        clip.position.set(cx, neckY - 0.35, 0);
+        hanger.add(clip);
       });
+    }
+
+    return hanger;
+  }
+
+  /* ---------- Conversor Imagem (Frente + Costas) -> Modelo 3D Volumétrico no Cabide ---------- */
+  function createAutoBackTexture(rgb, alphaCanvas) {
+    var w = alphaCanvas.width, h = alphaCanvas.height;
+    var cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    var ctx = cv.getContext("2d");
+
+    ctx.fillStyle = "rgb(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + ")";
+    ctx.fillRect(0, 0, w, h);
+
+    var grad = ctx.createLinearGradient(0, 0, w, 0);
+    grad.addColorStop(0, "rgba(0,0,0,0.22)");
+    grad.addColorStop(0.25, "rgba(255,255,255,0.05)");
+    grad.addColorStop(0.5, "rgba(255,255,255,0.09)");
+    grad.addColorStop(0.75, "rgba(255,255,255,0.05)");
+    grad.addColorStop(1, "rgba(0,0,0,0.22)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Espelha a silhueta horizontalmente para alinhar com a vista traseira
+    ctx.globalCompositeOperation = "destination-in";
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(alphaCanvas, 0, 0);
+
+    var tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  function build3DFromImages(frontImg, backImg, tintHex, isOriginalColor) {
+    var rootGroup = new THREE.Group();
+
+    var S = 160;
+    var aCv = document.createElement("canvas");
+    aCv.width = S; aCv.height = S;
+    var aCtx = aCv.getContext("2d");
+    aCtx.clearRect(0, 0, S, S);
+    aCtx.drawImage(frontImg, 0, 0, S, S);
+
+    var mask = new Uint8Array(S * S);
+    var minX = S, maxX = 0, minY = S, maxY = 0;
+    var rSum = 0, gSum = 0, bSum = 0, count = 0;
+    var canRead = true;
+
+    try {
+      var imgData = aCtx.getImageData(0, 0, S, S).data;
+      for (var y = 0; y < S; y++) {
+        for (var x = 0; x < S; x++) {
+          var idx = (y * S + x) * 4;
+          if (imgData[idx + 3] > 28) {
+            mask[y * S + x] = 1;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+            var r = imgData[idx], g = imgData[idx + 1], b = imgData[idx + 2];
+            if (r + g + b < 580) { rSum += r; gSum += g; bSum += b; count++; }
+          }
+        }
+      }
+    } catch (e) {
+      canRead = false;
+    }
+
+    var fabricRgb = count > 20
+      ? [Math.round(rSum / count), Math.round(gSum / count), Math.round(bSum / count)]
+      : [24, 26, 32];
+
+    if (!canRead || maxX <= minX || maxY <= minY) {
+      minX = 12; maxX = S - 12; minY = 12; maxY = S - 12;
+      for (var fy = minY; fy <= maxY; fy++) {
+        for (var fx = minX; fx <= maxX; fx++) mask[fy * S + fx] = 1;
+      }
+    }
+
+    // Calcula mapa de profundidade 3D a partir do recorte da roupa
+    var dist = new Float32Array(S * S);
+    var INF = 999;
+    for (var i = 0; i < S * S; i++) dist[i] = mask[i] ? INF : 0;
+
+    for (var y1 = 1; y1 < S - 1; y1++) {
+      for (var x1 = 1; x1 < S - 1; x1++) {
+        var p1 = y1 * S + x1;
+        if (!dist[p1]) continue;
+        dist[p1] = Math.min(dist[p1], dist[p1 - 1] + 1, dist[p1 - S] + 1, dist[p1 - S - 1] + 1.414, dist[p1 - S + 1] + 1.414);
+      }
+    }
+    for (var y2 = S - 2; y2 >= 1; y2--) {
+      for (var x2 = S - 2; x2 >= 1; x2--) {
+        var p2 = y2 * S + x2;
+        if (!dist[p2]) continue;
+        dist[p2] = Math.min(dist[p2], dist[p2 + 1] + 1, dist[p2 + S] + 1, dist[p2 + S - 1] + 1.414, dist[p2 + S + 1] + 1.414);
+      }
+    }
+
+    var smoothDist = new Float32Array(S * S);
+    var maxD = 1;
+    for (var sy = 1; sy < S - 1; sy++) {
+      for (var sx = 1; sx < S - 1; sx++) {
+        var sp = sy * S + sx;
+        if (!mask[sp]) continue;
+        var acc = 0;
+        for (var ky = -1; ky <= 1; ky++) {
+          for (var kx = -1; kx <= 1; kx++) acc += dist[(sy + ky) * S + (sx + kx)];
+        }
+        var v = acc / 9;
+        smoothDist[sp] = v;
+        if (v > maxD) maxD = v;
+      }
+    }
+
+    var boxW = (maxX - minX + 1) / S;
+    var boxH = (maxY - minY + 1) / S;
+    var aspect = (boxW * (frontImg.naturalWidth || 1)) / (boxH * (frontImg.naturalHeight || 1));
+    var meshW = aspect >= 1 ? 1.38 : Math.max(0.95, 1.32 * aspect);
+    var meshH = meshW / aspect;
+    if (meshH > 1.52) { meshH = 1.52; meshW = meshH * aspect; }
+
+    // Detecta alças ou ombros no topo da foto para apoiar no cabide cromado 3D
+    var scanLimitY = Math.min(maxY, minY + Math.round((maxY - minY) * 0.16));
+    var leftSumX = 0, leftCnt = 0, rightSumX = 0, rightCnt = 0;
+    var midX = (minX + maxX) * 0.5;
+    for (var ty = minY; ty <= scanLimitY; ty++) {
+      for (var tx = minX; tx <= maxX; tx++) {
+        if (mask[ty * S + tx]) {
+          if (tx < midX) { leftSumX += tx; leftCnt++; }
+          else { rightSumX += tx; rightCnt++; }
+        }
+      }
+    }
+    var strapSpanPx = (leftCnt && rightCnt) ? ((rightSumX / rightCnt) - (leftSumX / leftCnt)) : (maxX - minX) * 0.72;
+    var hangerHalfSpan = ((strapSpanPx / (maxX - minX)) * meshW) * 0.68;
+    var topEdgeY = 0.25 + meshH * 0.5;
+    rootGroup.add(buildHanger3D(hangerHalfSpan, topEdgeY + 0.14, false));
+
+    // Texturas Frente e Costas
+    var frontTex = new THREE.Texture(frontImg);
+    frontTex.colorSpace = THREE.SRGBColorSpace;
+    frontTex.anisotropy = 4;
+    frontTex.needsUpdate = true;
+
+    var backTex;
+    if (backImg) {
+      backTex = new THREE.Texture(backImg);
+      backTex.colorSpace = THREE.SRGBColorSpace;
+      backTex.anisotropy = 4;
+      backTex.needsUpdate = true;
+    } else {
+      backTex = createAutoBackTexture(fabricRgb, aCv);
+    }
+
+    var materialColor = isOriginalColor ? new THREE.Color(0xffffff) : new THREE.Color(tintHex);
+
+    // Malha 3D Frontal (+Z) e Malha 3D das Costas (-Z)
+    var segX = 68, segY = 76;
+    var frontGeo = new THREE.PlaneGeometry(meshW, meshH, segX, segY);
+    var backGeo = new THREE.PlaneGeometry(meshW, meshH, segX, segY);
+    backGeo.rotateY(Math.PI); // vira a malha traseira 180° para ler a imagem de costas sem espelhar texto
+
+    var uMin = minX / S, uMax = (maxX + 1) / S;
+    var vTop = 1 - (minY / S), vBot = 1 - ((maxY + 1) / S);
+
+    var fPos = frontGeo.attributes.position, fUv = frontGeo.attributes.uv;
+    var bPos = backGeo.attributes.position, bUv = backGeo.attributes.uv;
+
+    for (var vi = 0; vi < fPos.count; vi++) {
+      var gx = vi % (segX + 1);
+      var gy = Math.floor(vi / (segX + 1));
+      var nx = gx / segX;
+      var ny = gy / segY;
+
+      var u = uMin + nx * (uMax - uMin);
+      var v = vTop + ny * (vBot - vTop);
+
+      var px = Math.min(S - 1, Math.max(0, Math.floor(u * S)));
+      var py = Math.min(S - 1, Math.max(0, Math.floor((1 - v) * S)));
+      var dNorm = smoothDist[py * S + px] / maxD;
+
+      var inflate = Math.pow(Math.min(1, dNorm * 1.45), 0.55);
+      var torsoArch = Math.sin(nx * Math.PI) * 0.055 * inflate;
+      var zFront = inflate * 0.135 + torsoArch;
+      var zBack = -(inflate * 0.105 + torsoArch * 0.75);
+
+      fPos.setZ(vi, zFront);
+      fUv.setXY(vi, u, v);
+
+      bPos.setZ(vi, zBack);
+      bUv.setXY(vi, backImg ? (nx) : u, backImg ? (1 - ny) : v);
+    }
+
+    frontGeo.computeVertexNormals();
+    backGeo.computeVertexNormals();
+
+    var frontMat = new THREE.MeshStandardMaterial({
+      map: frontTex,
+      color: materialColor,
+      transparent: true,
+      alphaTest: 0.16,
+      roughness: 0.58,
+      metalness: 0.08
+    });
+
+    var backMat = new THREE.MeshStandardMaterial({
+      map: backTex,
+      color: materialColor,
+      transparent: true,
+      alphaTest: 0.16,
+      roughness: 0.65,
+      metalness: 0.06
+    });
+
+    var frontMesh = new THREE.Mesh(frontGeo, frontMat);
+    var backMesh = new THREE.Mesh(backGeo, backMat);
+    frontMesh.position.y = 0.25;
+    backMesh.position.y = 0.25;
+
+    rootGroup.add(frontMesh);
+    rootGroup.add(backMesh);
+
+    // Borda lateral 3D unindo frente e costas (espessura visível quando gira de lado)
+    var rimMat = new THREE.MeshStandardMaterial({
+      color: isOriginalColor
+        ? new THREE.Color("rgb(" + fabricRgb[0] + "," + fabricRgb[1] + "," + fabricRgb[2] + ")")
+        : new THREE.Color(tintHex),
+      roughness: 0.7,
+      metalness: 0.05,
+      side: THREE.DoubleSide
+    });
+    var rimPositions = [];
+    for (var ry = minY; ry <= maxY; ry += 2) {
+      var leftEdge = -1, rightEdge = -1;
+      for (var rx = minX; rx <= maxX; rx++) {
+        if (mask[ry * S + rx]) {
+          if (leftEdge < 0) leftEdge = rx;
+          rightEdge = rx;
+        }
+      }
+      if (leftEdge >= 0 && rightEdge > leftEdge) {
+        var wy = 0.25 + (0.5 - (ry - minY) / Math.max(1, maxY - minY)) * meshH;
+        var wxL = ((leftEdge - minX) / Math.max(1, maxX - minX) - 0.5) * meshW;
+        var wxR = ((rightEdge - minX) / Math.max(1, maxX - minX) - 0.5) * meshW;
+        rimPositions.push({ y: wy, xL: wxL, xR: wxR });
+      }
+    }
+    if (rimPositions.length > 2) {
+      var sideVerts = [];
+      for (var ri = 0; ri < rimPositions.length - 1; ri++) {
+        var aR = rimPositions[ri], bR = rimPositions[ri + 1];
+        sideVerts.push(aR.xL, aR.y, 0.032, aR.xL, aR.y, -0.032, bR.xL, bR.y, 0.032);
+        sideVerts.push(bR.xL, bR.y, 0.032, aR.xL, aR.y, -0.032, bR.xL, bR.y, -0.032);
+        sideVerts.push(aR.xR, aR.y, 0.032, bR.xR, bR.y, 0.032, aR.xR, aR.y, -0.032);
+        sideVerts.push(bR.xR, bR.y, 0.032, bR.xR, bR.y, -0.032, aR.xR, aR.y, -0.032);
+      }
+      var sideGeo = new THREE.BufferGeometry();
+      sideGeo.setAttribute("position", new THREE.Float32BufferAttribute(sideVerts, 3));
+      sideGeo.computeVertexNormals();
+      rootGroup.add(new THREE.Mesh(sideGeo, rimMat));
+    }
+
+    return rootGroup;
+  }
+
+  /* ---------- Fallback 3D no cabide (enquanto o PNG da peça não foi enviado para assets/produtos/) ---------- */
+  function buildFallbackGarment3D(tipo, hexColor) {
+    var rootGroup = new THREE.Group();
+    var isLight = claro(hexColor);
+    var fabricMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(hexColor),
+      roughness: 0.62,
+      metalness: 0.08,
+      side: THREE.DoubleSide
+    });
+    var trimMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(hexColor).multiplyScalar(isLight ? 0.90 : 1.22),
+      roughness: 0.55
+    });
+
+    if (tipo === "shorts") {
+      rootGroup.add(buildHanger3D(0.56, 1.02, true));
+      var sWaist = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.56, 0.38, 40, 1, true), fabricMat);
+      sWaist.scale.set(1, 1, 0.54);
+      sWaist.position.y = 0.44;
+      rootGroup.add(sWaist);
+      [-0.27, 0.27].forEach(function (lx, idx) {
+        var sLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.27, 0.62, 28, 1, true), fabricMat);
+        sLeg.scale.set(1, 1, 0.76);
+        sLeg.position.set(lx, -0.04, 0);
+        sLeg.rotation.z = idx === 0 ? -0.05 : 0.05;
+        rootGroup.add(sLeg);
+      });
+    } else {
+      rootGroup.add(buildHanger3D(0.64, 1.22, false));
+      var bodyGeo = new THREE.CylinderGeometry(0.60, 0.55, 1.38, 44, 14, true);
+      bodyGeo.scale(1, 1, 0.52);
+      var bodyMesh = new THREE.Mesh(bodyGeo, fabricMat);
+      bodyMesh.position.y = 0.24;
+      rootGroup.add(bodyMesh);
+
+      var collar = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.025, 10, 32), trimMat);
+      collar.rotation.x = Math.PI / 2.15;
+      collar.position.set(0, 0.92, 0.03);
+      rootGroup.add(collar);
+
+      if (tipo === "camiseta") {
+        [-0.71, 0.71].forEach(function (sx, idx) {
+          var slv = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.19, 0.52, 24, 1, true), fabricMat);
+          slv.position.set(sx, 0.70, 0);
+          slv.rotation.z = idx === 0 ? 0.52 : -0.52;
+          rootGroup.add(slv);
+        });
+      }
+    }
+    return rootGroup;
+  }
+
+  /* ---------- Renderizadores WebGL ---------- */
+  function disposeScenes() {
+    cancelAnimationFrame(rafId);
+    scenes.forEach(function (s) { if (s.renderer) s.renderer.dispose(); });
+    scenes = [];
+  }
+
+  function createCardViewer(container, p, idx) {
+    var w = 340, h = 480;
+    var renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(w, h, false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    container.innerHTML = "";
+    container.appendChild(renderer.domElement);
+
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(32, w / h, 0.1, 20);
+    camera.position.set(0, 0.48, 4.35);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 1.05));
+    var key = new THREE.DirectionalLight(0xffffff, 1.35);
+    key.position.set(2.2, 3.4, 3.6);
+    scene.add(key);
+    var rim = new THREE.DirectionalLight(0xe2e8f0, 0.90);
+    rim.position.set(-2.5, 2.2, -3.2);
+    scene.add(rim);
+    var fill = new THREE.DirectionalLight(0xffffff, 0.50);
+    fill.position.set(0, -2.0, 2.4);
+    scene.add(fill);
+
+    var pivot = new THREE.Group();
+    scene.add(pivot);
+
+    var viewer = {
+      idx: idx,
+      produto: p,
+      renderer: renderer,
+      scene: scene,
+      camera: camera,
+      pivot: pivot,
+      currentRotY: 0,
+      loadVariant: function (corIdx) {
+        var corNome = (p.cores && p.cores[corIdx]) || "Preta";
+        var hex = hexDe(corNome);
+        var pair = getImagePair(p, corIdx);
+        var isOrig = corIdx === 0;
+
+        loadCleanImage(pair.front).then(function (fImg) {
+          loadCleanImage(pair.back).then(function (bImg) {
+            while (pivot.children.length) pivot.remove(pivot.children[0]);
+            pivot.add(build3DFromImages(fImg, bImg, hex, isOrig));
+          }).catch(function () {
+            while (pivot.children.length) pivot.remove(pivot.children[0]);
+            pivot.add(build3DFromImages(fImg, null, hex, isOrig));
+          });
+        }).catch(function () {
+          while (pivot.children.length) pivot.remove(pivot.children[0]);
+          pivot.add(buildFallbackGarment3D(tipoDe(p), hex));
+        });
+      }
     };
-    box.innerHTML = ""; box.appendChild(im); im.src = url;
+
+    var st = getSel(p);
+    viewer.loadVariant(st.corIdx);
+    return viewer;
   }
 
-  /* ---------- Trilho ---------- */
-  var CABIDE = '<svg class="cabide" viewBox="0 0 120 44" aria-hidden="true" focusable="false"><path d="M60 3a8 8 0 1 1 8 8c-4 0-8 3-8 8v5L6 40h108L60 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  function render(l) {
-    lista = l;
-    if (!rail) {
-      host.innerHTML = DEFS + '<div class="rail3d" id="rail3d" role="list" aria-label="Peças da loja"><div class="row"></div></div><div class="legenda" aria-live="polite"></div>';
-      rail = $("#rail3d"); legenda = $(".legenda", host);
-      rail.addEventListener("scroll", agenda, { passive: true }); addEventListener("resize", agenda);
+  function animateLoop(t) {
+    rafId = requestAnimationFrame(animateLoop);
+    var sec = (t || 0) * 0.001;
+    scenes.forEach(function (sc) {
+      var isCenter = sc.idx === centerIdx;
+      // Gira 180° ao arrastar cima/baixo (Frente <-> Costas) e gira de lado ao arrastar horizontalmente
+      var sideTurn = isCenter ? (-dragShift * 0.65) : 0;
+      var targetY = (isCenter && isBack ? Math.PI : 0) + (isCenter ? dragRotOffset : 0) + sideTurn;
+      sc.currentRotY += (targetY - sc.currentRotY) * 0.18;
+      sc.pivot.rotation.y = sc.currentRotY;
+      sc.pivot.rotation.z = isCenter && !reduce ? Math.sin(sec * 1.8) * 0.015 : 0;
+      sc.renderer.render(sc.scene, sc.camera);
+    });
+  }
+
+  function getSel(p) {
+    if (!selecao[p.id]) {
+      var tams = p.tamanhos || [];
+      selecao[p.id] = { corIdx: 0, tam: tams[0] || "" };
     }
-    var row = $(".row", rail);
-    if (!l.length) { row.innerHTML = '<p class="vazio">Nenhuma peça encontrada.</p>'; garms = []; legenda.innerHTML = ""; return; }
-    row.classList.toggle("drop", primeira);
-    row.innerHTML = l.map(function (p, i) {
-      return '<button class="gar" type="button" role="listitem" data-i="' + i + '" style="--i:' + i + '" aria-label="' + esc(p.nome + ", " + C().money(p.preco)) + '"><span class="hang">' + CABIDE + '<span class="swing"><span class="artbox"></span>' + (p.novo ? '<span class="tag">Novo</span>' : "") + "</span></span></button>";
+    return selecao[p.id];
+  }
+
+  /* ---------- Renderização da Vitrine ---------- */
+  function render(produtos) {
+    pendingList = produtos;
+    ensureThree(function () {
+      if (pendingList !== produtos) return;
+      mountVitrine(produtos);
+    });
+  }
+
+  function mountVitrine(produtos) {
+    disposeScenes();
+    lista = produtos;
+    centerIdx = Math.min(centerIdx, Math.max(0, lista.length - 1));
+    isBack = false;
+    dragRotOffset = 0;
+    dragShift = 0;
+
+    if (!lista.length) {
+      host.innerHTML = '<p class="vazio">Nenhuma peça encontrada.</p>';
+      return;
+    }
+
+    host.innerHTML =
+      '<div class="look-studio">' +
+        '<div class="look-stage" id="lookStage">' +
+          '<div class="stage-top">' +
+            '<button type="button" class="side-pill" id="btnFlipSide" aria-label="Virar peça frente e costas"><span class="side-dot"></span><span id="sideLabel">Vista: Frente · Ver costas ↻</span></button>' +
+            '<span class="stage-hint">← → Vira de lado e troca · ↑ ↓ Vira de costas</span>' +
+          '</div>' +
+          '<div class="look-track" id="lookTrack" role="region" aria-label="Arara 3D interativa"></div>' +
+          '<div class="stage-foot">' +
+            '<button type="button" class="nav-arrow" id="prevLook" aria-label="Peça anterior">‹</button>' +
+            '<div class="dots" id="lookDots"></div>' +
+            '<button type="button" class="nav-arrow" id="nextLook" aria-label="Próxima peça">›</button>' +
+          '</div>' +
+        '</div>' +
+        '<aside class="look-panel" id="lookPanel" aria-label="Detalhes da peça selecionada"></aside>' +
+      '</div>';
+
+    var track = $("#lookTrack", host);
+    track.innerHTML = lista.map(function (p, i) {
+      return '<div class="look-card" role="button" tabindex="0" data-look="' + i + '" aria-label="' + esc(p.nome) + '">' +
+        (p.novo ? '<span class="look-badge">Novo</span>' : "") +
+        '<div class="model-box" id="mbox-' + i + '"></div>' +
+      '</div>';
     }).join("");
-    garms = $$(".gar", row);
-    garms.forEach(function (g, i) { montaArte($(".artbox", g), l[i], 0); });
-    primeira = false; agenda();
-    if (!hashFeito) { hashFeito = true; var m = /#produto=([^&]+)/.exec(location.hash); if (m) { var id = decodeURIComponent(m[1]); for (var k = 0; k < l.length; k++) if (l[k].id === id) { abrir(k); break; } } }
-  }
-  function agenda() { if (!agendado) { agendado = true; requestAnimationFrame(atualizar); } }
-  function atualizar() {
-    agendado = false; if (!rail || !garms.length) return;
-    var r = rail.getBoundingClientRect(), fx = focoX == null ? r.left + r.width / 2 : focoX, span = Math.max(150, Math.min(340, r.width * 0.3)), best = 9, bi = 0;
-    garms.forEach(function (g, i) {
-      var b = g.getBoundingClientRect(), d = Math.max(-1, Math.min(1, (b.left + b.width / 2 - fx) / span)), ad = Math.abs(d);
-      g.style.setProperty("--ry", (reduce ? 0 : d * 64).toFixed(1) + "deg");
-      g.style.setProperty("--sc", (1 + 0.2 * (1 - ad)).toFixed(3));
-      g.style.setProperty("--rn", (reduce ? 0 : d * 64).toFixed(1));
-      g.style.zIndex = Math.round((1 - ad) * 10);
-      if (ad < best) { best = ad; bi = i; }
-    });
-    garms.forEach(function (g, i) { g.classList.toggle("foco", i === bi); });
-    var p = lista[bi]; legenda.innerHTML = "<b>" + esc(p.nome) + "</b><span>" + C().money(p.preco) + "</span><small>Toque na peça para ver os detalhes</small>";
-  }
-  host.addEventListener("pointermove", function (e) { if (e.pointerType !== "touch") { focoX = e.clientX; agenda(); } });
-  host.addEventListener("pointerleave", function () { focoX = null; agenda(); });
-  host.addEventListener("focusin", function (e) { var g = e.target.closest && e.target.closest(".gar"); if (g) { var b = g.getBoundingClientRect(); focoX = b.left + b.width / 2; agenda(); } });
-  host.addEventListener("click", function (e) { var g = e.target.closest(".gar"); if (g) abrir(+g.dataset.i); });
 
-  /* ---------- Detalhes (tela cheia com fundo desfocado) ---------- */
-  function criaDetalhe() {
-    det = document.createElement("div"); det.className = "det"; det.hidden = true;
-    det.setAttribute("role", "dialog"); det.setAttribute("aria-modal", "true"); det.setAttribute("aria-label", "Detalhes da peça");
-    det.innerHTML = '<div class="dtop"><button type="button" class="dlink" data-a="fechar">Fechar ✕</button><button type="button" class="dlink" data-a="carrinho">Carrinho <b id="detN">0</b></button></div>' +
-      '<div class="dbody"><div class="dstage"><button class="nv" type="button" data-a="prev" aria-label="Peça anterior">‹</button><div class="hang2">' + CABIDE.replace('class="cabide"', 'class="cabide big"') + '<div class="swing2"><div class="artbox big"></div></div></div><button class="nv" type="button" data-a="next" aria-label="Próxima peça">›</button></div>' +
-      '<div class="dinfo"><small class="idx"></small><h2 class="dnome"></h2><p class="dpreco"></p><p class="ddesc"></p>' +
-      '<div class="dgrp" data-g="cor"><span>Cor: <b class="cnome"></b></span><div class="sw"></div></div><div class="dgrp" data-g="tam"><span>Tamanho</span><div class="tg"></div></div>' +
-      '<label class="dqty">Quantidade <input class="dq" type="number" min="1" max="10" value="1"></label>' +
-      '<div class="dacts"><button class="btn" type="button" data-a="add">Adicionar ao carrinho</button><button class="btn ghost" type="button" data-a="buy">Comprar agora</button></div><p class="dmsg" role="status"></p><a class="dshare" target="_blank" rel="noopener">Compartilhar no WhatsApp</a></div></div>';
-    document.body.appendChild(det);
-    det.addEventListener("click", function (e) {
-      var b = e.target.closest("[data-a],[data-cor],[data-tam]"); if (!b) return;
-      if (b.dataset.cor != null) return trocaCor(+b.dataset.cor);
-      if (b.dataset.tam != null) { if (b.disabled) return; tamSel = b.dataset.tam; $$(".tg button", det).forEach(function (x) { x.setAttribute("aria-pressed", x === b); }); $(".dmsg", det).textContent = ""; return; }
-      var a = b.dataset.a;
-      if (a === "fechar") fechar(); else if (a === "prev") abrir(atual - 1, true); else if (a === "next") abrir(atual + 1, true);
-      else if (a === "carrinho") { fechar(); C().abrirCarrinho(); } else if (a === "add") comprar(false); else if (a === "buy") comprar(true);
+    $("#lookDots", host).innerHTML = lista.map(function (p, i) {
+      return '<button type="button" class="dot" data-dot="' + i + '" aria-label="Ver ' + esc(p.nome) + '"></button>';
+    }).join("");
+
+    lista.forEach(function (p, i) {
+      var viewer = createCardViewer($("#mbox-" + i, host), p, i);
+      if (viewer) scenes.push(viewer);
     });
-    var st = $(".dstage", det), sw = $(".swing2", det);
-    st.addEventListener("pointermove", function (e) { var r = st.getBoundingClientRect(); sw.style.setProperty("--tx", (((e.clientX - r.left) / r.width) - 0.5).toFixed(2)); sw.style.setProperty("--ty", (((e.clientY - r.top) / r.height) - 0.5).toFixed(2)); });
-    st.addEventListener("pointerleave", function () { sw.style.setProperty("--tx", 0); sw.style.setProperty("--ty", 0); });
+
+    bindEvents();
+    atualizarPosicoes3D(false);
+    atualizarPainel();
+    animateLoop(0);
   }
-  function abrir(i, troca) {
-    if (!lista.length) return; if (!det) criaDetalhe();
-    atual = (i + lista.length) % lista.length; corIdx = 0; tamSel = "";
-    var p = lista[atual], cores = p.cores || [], tams = p.tamanhos || [], off = p.indisponiveis || [];
-    $(".idx", det).textContent = (atual + 1) + " / " + lista.length + (p.categoria ? " · " + p.categoria : "");
-    $(".dnome", det).textContent = p.nome; $(".dpreco", det).textContent = C().money(p.preco); $(".ddesc", det).textContent = p.descricao || "";
-    var gc = $('[data-g="cor"]', det), gt = $('[data-g="tam"]', det); gc.hidden = !cores.length; gt.hidden = !tams.length;
-    $(".sw", det).innerHTML = cores.map(function (c, k) { return '<button type="button" class="swb" data-cor="' + k + '" aria-label="' + esc(c) + '" aria-pressed="' + (k === 0) + '" style="--c:' + hexDe(c) + '"></button>'; }).join("");
-    $(".cnome", det).textContent = cores[0] || "";
-    $(".tg", det).innerHTML = tams.map(function (t) { var x = off.indexOf(t) >= 0; return '<button type="button" data-tam="' + esc(t) + '" aria-pressed="false"' + (x ? ' disabled title="Esgotado"' : "") + ">" + esc(t) + "</button>"; }).join("");
-    $(".dq", det).value = 1; var m = $(".dmsg", det); m.textContent = ""; m.className = "dmsg";
-    $("#detN", det).textContent = $("#cartN").textContent;
-    $(".dshare", det).href = "https://wa.me/?text=" + encodeURIComponent(p.nome + " — " + location.href.split("#")[0] + "#produto=" + p.id);
-    montaArte($(".artbox.big", det), p, 0);
-    var h = $(".hang2", det); h.classList.remove("in"); void h.offsetWidth; h.classList.add("in");
-    if (det.hidden) { voltaFoco = document.activeElement; det.hidden = false; document.documentElement.classList.add("trava"); $('[data-a="fechar"]', det).focus(); }
-    try { history.replaceState(null, "", "#produto=" + encodeURIComponent(p.id)); } catch (e) {}
-  }
-  function fechar() {
-    if (!det || det.hidden) return; det.hidden = true; document.documentElement.classList.remove("trava");
-    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
-    if (voltaFoco && voltaFoco.focus) voltaFoco.focus();
-  }
-  function trocaCor(k) {
-    var p = lista[atual]; corIdx = k;
-    $$(".swb", det).forEach(function (b, n) { b.setAttribute("aria-pressed", n === k); }); $(".cnome", det).textContent = p.cores[k];
-    montaArte($(".artbox.big", det), p, k);
-    var s = $(".swing2", det); s.classList.remove("troca"); void s.offsetWidth; s.classList.add("troca");
-  }
-  function comprar(agora) {
-    var p = lista[atual], m = $(".dmsg", det);
-    if ((p.tamanhos || []).length && !tamSel) { m.textContent = "Escolha um tamanho."; m.className = "dmsg erro"; var b = $(".tg button:not([disabled])", det); if (b) b.focus(); return; }
-    C().adicionar(p.id, tamSel, (p.cores && p.cores[corIdx]) || "", Math.max(1, Math.min(10, +$(".dq", det).value || 1)));
-    $("#detN", det).textContent = $("#cartN").textContent;
-    if (agora) { fechar(); C().abrirCheckout(); return; }
-    m.className = "dmsg ok"; m.textContent = "Adicionado ao carrinho ✓";
-    var n = $("#detN", det); n.classList.remove("bump"); void n.offsetWidth; n.classList.add("bump");
-  }
-  document.addEventListener("keydown", function (e) {
-    if (!det || det.hidden) return;
-    if (e.key === "Escape") fechar(); else if (e.key === "ArrowLeft") abrir(atual - 1, true); else if (e.key === "ArrowRight") abrir(atual + 1, true);
-    else if (e.key === "Tab") {
-      var f = $$("button:not([disabled]),a[href],input", det).filter(function (x) { return x.offsetParent !== null; });
-      if (!f.length) return; var a = f[0], z = f[f.length - 1];
-      if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); } else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+
+  function atualizarPosicoes3D(isDragging) {
+    var pill = $("#btnFlipSide", host);
+    var lbl = $("#sideLabel", host);
+    if (pill && lbl) {
+      pill.classList.toggle("is-back", isBack);
+      lbl.textContent = isBack ? "Vista: Costas · Ver frente ↻" : "Vista: Frente · Ver costas ↻";
     }
+
+    var mobile = window.innerWidth <= 860;
+    var stepX = mobile ? 150 : 210;
+
+    $$(".look-card", host).forEach(function (card, i) {
+      card.classList.toggle("dragging", !!isDragging);
+      var off = (i - centerIdx) + dragShift;
+      var abs = Math.abs(off);
+      card.style.zIndex = String(20 - Math.round(abs));
+
+      var tx = off * stepX;
+      var tz = -abs * 145;
+      var ry = reduce ? 0 : Math.max(-42, Math.min(42, -off * 22));
+      var sc = Math.max(0.66, 1 - abs * 0.16);
+      var op = abs > 2.3 ? 0 : Math.max(0.42, 1 - abs * 0.25);
+      var bl = reduce ? 0 : Math.min(7, abs * 3.2);
+
+      card.style.setProperty("--tx", tx.toFixed(1) + "px");
+      card.style.setProperty("--tz", tz.toFixed(1) + "px");
+      card.style.setProperty("--ry", ry.toFixed(1) + "deg");
+      card.style.setProperty("--sc", sc.toFixed(3));
+      card.style.setProperty("--op", op.toFixed(2));
+      card.style.setProperty("--bl", bl.toFixed(1) + "px");
+      card.style.pointerEvents = abs > 2 ? "none" : "auto";
+    });
+
+    $$(".dot", host).forEach(function (d, i) {
+      d.setAttribute("aria-current", i === centerIdx ? "true" : "false");
+    });
+  }
+
+  function atualizarPainel() {
+    var panel = $("#lookPanel", host);
+    var p = lista[centerIdx];
+    if (!panel || !p) return;
+
+    var st = getSel(p);
+    var cores = p.cores || [];
+    var tams = p.tamanhos || [];
+    var corAtual = cores[st.corIdx] || "";
+
+    var swHtml = cores.length ? '<div class="piece-row"><span class="piece-label">Cor: <b>' + esc(corAtual) + '</b></span><div class="sw-row">' +
+      cores.map(function (c, k) {
+        return '<button type="button" class="sw-dot" data-cor="' + k + '" aria-label="Cor ' + esc(c) + '" aria-pressed="' + (k === st.corIdx) + '" style="--c:' + hexDe(c) + '"></button>';
+      }).join("") + '</div></div>' : "";
+
+    var tamHtml = tams.length ? '<div class="piece-row"><span class="piece-label">Tamanho</span><div class="tam-row">' +
+      tams.map(function (t) {
+        return '<button type="button" class="tam-pill" data-tam="' + esc(t) + '" aria-pressed="' + (t === st.tam) + '">' + esc(t) + '</button>';
+      }).join("") + '</div></div>' : "";
+
+    panel.innerHTML =
+      '<div>' +
+        '<div class="panel-head">' +
+          '<div>' +
+            '<span class="panel-kicker">Peça ' + (centerIdx + 1) + ' de ' + lista.length + (p.categoria ? ' · ' + esc(p.categoria) : '') + '</span>' +
+            '<h2 class="panel-title">' + esc(p.nome) + '</h2>' +
+            '<p class="panel-sub">' + esc(p.descricao || "") + '</p>' +
+          '</div>' +
+          '<span class="panel-total">' + C().money(p.preco) + '</span>' +
+        '</div>' +
+        '<div class="piece-card">' + swHtml + tamHtml + '</div>' +
+      '</div>' +
+      '<div class="panel-foot">' +
+        '<p class="panel-msg" id="panelMsg" role="status"></p>' +
+        '<div class="panel-actions">' +
+          '<button type="button" class="btn" id="addLookBtn">Adicionar à sacola</button>' +
+          '<button type="button" class="btn ghost" id="buyLookBtn">Comprar</button>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function irPara(idx) {
+    if (!lista.length) return;
+    centerIdx = (idx + lista.length) % lista.length;
+    isBack = false;
+    dragRotOffset = 0;
+    dragShift = 0;
+    atualizarPosicoes3D(false);
+    atualizarPainel();
+  }
+
+  function bindEvents() {
+    var track = $("#lookTrack", host);
+    var startX = null, startY = null, axis = null, moved = false, lastDx = 0, lastDy = 0;
+
+    track.addEventListener("pointerdown", function (e) {
+      startX = e.clientX;
+      startY = e.clientY;
+      axis = null;
+      moved = false;
+      lastDx = 0;
+      lastDy = 0;
+      if (track.setPointerCapture) {
+        try { track.setPointerCapture(e.pointerId); } catch (err) {}
+      }
+    });
+
+    track.addEventListener("pointermove", function (e) {
+      if (startX == null || startY == null) return;
+      var dx = e.clientX - startX;
+      var dy = e.clientY - startY;
+      lastDx = dx;
+      lastDy = dy;
+
+      if (!axis && Math.hypot(dx, dy) > 10) {
+        axis = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+        moved = true;
+      }
+
+      if (axis === "x") {
+        // Arrastar para o lado vira a peça de lado em 3D e desliza o carrossel ao vivo
+        var step = window.innerWidth <= 860 ? 150 : 210;
+        dragShift = Math.max(-1.15, Math.min(1.15, dx / step));
+        atualizarPosicoes3D(true);
+      } else if (axis === "y") {
+        // Arrastar para cima ou para baixo gira a roupa de costas em 180°
+        dragRotOffset = Math.max(-Math.PI, Math.min(Math.PI, (-dy / 155) * Math.PI));
+      }
+    });
+
+    var finishGesture = function (e) {
+      if (axis === "x") {
+        dragShift = 0;
+        if (Math.abs(lastDx) > 36) {
+          irPara(centerIdx + (lastDx < 0 ? 1 : -1));
+        } else {
+          atualizarPosicoes3D(false);
+        }
+      } else if (axis === "y") {
+        if (Math.abs(lastDy) > 28) isBack = !isBack;
+        dragRotOffset = 0;
+        atualizarPosicoes3D(false);
+      } else if (!moved && e && e.target) {
+        var card = e.target.closest(".look-card");
+        if (card) {
+          var idx = +card.dataset.look;
+          if (idx !== centerIdx) irPara(idx);
+          else { isBack = !isBack; atualizarPosicoes3D(false); }
+        }
+      }
+      startX = null;
+      startY = null;
+      axis = null;
+      dragRotOffset = 0;
+      dragShift = 0;
+    };
+
+    track.addEventListener("pointerup", finishGesture);
+    track.addEventListener("pointercancel", function () {
+      startX = null; startY = null; axis = null; dragRotOffset = 0; dragShift = 0;
+      atualizarPosicoes3D(false);
+    });
+
+    host.addEventListener("click", function (e) {
+      if (e.target.closest("#btnFlipSide")) { isBack = !isBack; atualizarPosicoes3D(false); return; }
+      if (e.target.closest("#prevLook")) { irPara(centerIdx - 1); return; }
+      if (e.target.closest("#nextLook")) { irPara(centerIdx + 1); return; }
+
+      var dot = e.target.closest("[data-dot]");
+      if (dot) { irPara(+dot.dataset.dot); return; }
+
+      var sw = e.target.closest("[data-cor]");
+      if (sw) {
+        var p = lista[centerIdx];
+        var st = getSel(p);
+        st.corIdx = +sw.dataset.cor;
+        var sc = scenes[centerIdx];
+        if (sc) sc.loadVariant(st.corIdx);
+        atualizarPainel();
+        return;
+      }
+
+      var tm = e.target.closest("[data-tam]");
+      if (tm) {
+        var p2 = lista[centerIdx];
+        getSel(p2).tam = tm.dataset.tam;
+        atualizarPainel();
+        return;
+      }
+
+      if (e.target.closest("#addLookBtn") || e.target.closest("#buyLookBtn")) {
+        var buyNow = !!e.target.closest("#buyLookBtn");
+        var peca = lista[centerIdx];
+        var sel = getSel(peca);
+        C().adicionar(peca.id, sel.tam, (peca.cores && peca.cores[sel.corIdx]) || "", 1);
+        if (buyNow) {
+          C().abrirCheckout();
+        } else {
+          var msg = $("#panelMsg", host);
+          if (msg) { msg.className = "panel-msg ok"; msg.textContent = peca.nome + " adicionada à sacola ✓"; }
+        }
+      }
+    });
+
+    window.addEventListener("resize", function () { atualizarPosicoes3D(false); });
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+    if (e.key === "ArrowLeft") irPara(centerIdx - 1);
+    else if (e.key === "ArrowRight") irPara(centerIdx + 1);
+    else if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); isBack = !isBack; atualizarPosicoes3D(false); }
   });
-  window.Vitrine = { render: render, abrir: abrir, fechar: fechar };
+
+  window.Vitrine = { render: render, abrir: function (i) { irPara(i); }, fechar: function () {} };
 })();
