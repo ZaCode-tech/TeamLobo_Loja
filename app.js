@@ -1,4 +1,4 @@
-/* LOJA TEAM LOBO — controlador da sacola, checkout, ViaCEP e Pix BR Code */
+/* LOJA TEAM LOBO — vitrine, carrinho, checkout e Pix (JavaScript puro) */
 (function () {
   "use strict";
   var L = window.LOJA || {}, root = document.documentElement;
@@ -8,7 +8,7 @@
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
   var produtos = [], carrinho = [], filtro = "Todos", fonte = "reserva (produtos.js)";
 
-  /* ---------- Pix (BR Code EMV + CRC16) ---------- */
+  /* ---------- Pix (BR Code) ---------- */
   function emv(id, v) { return id + ("0" + v.length).slice(-2) + v; }
   function crc16(s) {
     var c = 0xFFFF;
@@ -22,7 +22,7 @@
       emv("62", emv("05", String(txid).replace(/[^A-Za-z0-9]/g, "").slice(0, 25) || "***")) + "6304";
     return p + crc16(p);
   }
-  window.__pix = { pixPayload: pixPayload, crc16: crc16 };
+  window.__pix = { pixPayload: pixPayload, crc16: crc16 }; // usado nos testes
 
   /* ---------- Validações e máscaras ---------- */
   function cpfOk(c) {
@@ -37,13 +37,13 @@
     cep: function (v) { v = v.replace(/\D/g, "").slice(0, 8); return v.length > 5 ? v.slice(0, 5) + "-" + v.slice(5) : v; }
   };
 
-  /* ---------- Sacola / Carrinho ---------- */
+  /* ---------- Carrinho ---------- */
   function salvar() { try { localStorage.setItem("tl-loja-cart", JSON.stringify(carrinho)); } catch (e) {} atualizaBadge(); }
   function carregarCarrinho() { try { carrinho = JSON.parse(localStorage.getItem("tl-loja-cart") || "[]"); } catch (e) { carrinho = []; } }
   function prod(id) { return produtos.filter(function (p) { return p.id === id; })[0]; }
   function linhas() { return carrinho.map(function (i) { var p = prod(i.id); return p ? { i: i, p: p } : null; }).filter(Boolean); }
   function subtotal() { return linhas().reduce(function (s, l) { return s + l.p.preco * l.i.qtd; }, 0); }
-  function atualizaBadge() { $("#cartN").textContent = carrinho.reduce(function (s, i) { return s + i.qtd; }, 0); }
+  function atualizaBadge() { var n = carrinho.reduce(function (s, i) { return s + i.qtd; }, 0); $("#cartN").textContent = n; var d = $("#detN"); if (d) d.textContent = n; }
   function adicionar(id, tam, cor, qtd) {
     var ex = carrinho.filter(function (i) { return i.id === id && i.tam === tam && i.cor === cor; })[0];
     if (ex) ex.qtd = Math.min(10, ex.qtd + qtd); else carrinho.push({ id: id, tam: tam, cor: cor, qtd: Math.min(10, qtd) });
@@ -56,7 +56,7 @@
     d.addEventListener("click", function (e) { if (e.target === d || (e.target.dataset && "close" in e.target.dataset)) d.close(); });
   });
 
-  /* ---------- Filtros & Vitrine 3D ---------- */
+  /* ---------- Vitrine ---------- */
   function foto(p, cls) {
     var mono = esc(p.nome.split(" ").slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase());
     return '<div class="ph ' + (cls || "") + '" data-mono="' + mono + '">' + (p.fotos && p.fotos[0] ? '<img src="' + esc(p.fotos[0]) + '" alt="' + esc(p.nome) + '" loading="lazy" decoding="async">' : "") + "</div>";
@@ -66,22 +66,36 @@
     var cats = ["Todos"].concat(produtos.map(function (p) { return p.categoria; }).filter(function (c, i, a) { return a.indexOf(c) === i; }));
     $("#cats").innerHTML = cats.map(function (c) { return '<button type="button" class="chip" aria-pressed="' + (c === filtro) + '">' + esc(c) + "</button>"; }).join("");
   }
-  function renderVitrine() {
+  function renderGrid() {
     var q = $("#q").value.trim().toLowerCase(), o = $("#ord").value;
     var lista = produtos.filter(function (p) { return (filtro === "Todos" || p.categoria === filtro) && (!q || (p.nome + " " + p.categoria).toLowerCase().indexOf(q) >= 0); });
     lista.sort(function (a, b) { return o === "menor" ? a.preco - b.preco : o === "maior" ? b.preco - a.preco : (b.novo ? 1 : 0) - (a.novo ? 1 : 0); });
     if (window.Vitrine) window.Vitrine.render(lista);
   }
-  $("#cats").addEventListener("click", function (e) { var b = e.target.closest(".chip"); if (!b) return; filtro = b.textContent; renderCats(); renderVitrine(); });
-  $("#q").addEventListener("input", renderVitrine);
-  $("#ord").addEventListener("change", renderVitrine);
+  $("#cats").addEventListener("click", function (e) { var b = e.target.closest(".chip"); if (!b) return; filtro = b.textContent; renderCats(); renderGrid(); });
+  $("#q").addEventListener("input", renderGrid); $("#ord").addEventListener("change", renderGrid);
+
+  function abrirProduto(id) {
+    var p = prod(id); if (!p) return;
+    var tam = p.tamanhos && p.tamanhos.length, cor = p.cores && p.cores.length;
+    var chips = function (nome, arr) { return arr.map(function (v, i) { return '<label class="sel"><input type="radio" name="' + nome + '" value="' + esc(v) + '"' + (i === 0 ? " checked" : "") + "><span>" + esc(v) + "</span></label>"; }).join(""); };
+    $("#prodBody").innerHTML = '<div class="pdet">' + foto(p, "big") + "<div><h2>" + esc(p.nome) + '</h2><p class="price big">' + money(p.preco) + "</p><p>" + esc(p.descricao || "") + "</p>" +
+      (tam ? '<fieldset class="opts"><legend>Tamanho</legend>' + chips("tam", p.tamanhos) + "</fieldset>" : "") + (cor ? '<fieldset class="opts"><legend>Cor</legend>' + chips("cor", p.cores) + "</fieldset>" : "") +
+      '<label class="qty">Quantidade<input id="qtd" type="number" min="1" max="10" value="1"></label>' +
+      '<div class="acts"><button class="btn" type="button" id="addC">Adicionar ao carrinho</button><button class="btn ghost" type="button" id="buyN">Comprar agora</button></div></div></div>';
+    plano($("#prodBody"));
+    var ler = function () { var t = $('input[name="tam"]:checked', $("#prodBody")), c = $('input[name="cor"]:checked', $("#prodBody")); return [t ? t.value : "", c ? c.value : "", Math.max(1, Math.min(10, +$("#qtd").value || 1))]; };
+    $("#addC").onclick = function () { var v = ler(); adicionar(p.id, v[0], v[1], v[2]); $("#dlgProd").close(); abrirCarrinho(); };
+    $("#buyN").onclick = function () { var v = ler(); adicionar(p.id, v[0], v[1], v[2]); $("#dlgProd").close(); abrirCheckout(); };
+    abrir($("#dlgProd"));
+  }
 
   function abrirCarrinho() {
     var ls = linhas(), b = $("#cartBody");
-    if (!ls.length) { b.innerHTML = "<h2>Sua sacola</h2><p>Sua sacola está vazia. Escolha um look na vitrine 3D.</p>"; abrir($("#dlgCart")); return; }
-    b.innerHTML = "<h2>Sua sacola</h2>" + ls.map(function (l, n) {
+    if (!ls.length) { b.innerHTML = "<h2>Carrinho</h2><p>Seu carrinho está vazio.</p>"; abrir($("#dlgCart")); return; }
+    b.innerHTML = "<h2>Carrinho</h2>" + ls.map(function (l, n) {
       return '<div class="item">' + foto(l.p, "mini") + '<div><b>' + esc(l.p.nome) + "</b><small>" + esc([l.i.tam, l.i.cor].filter(Boolean).join(" · ")) + "</small><span>" + money(l.p.preco) + '</span></div><div class="stp"><button type="button" data-n="' + n + '" data-d="-1" aria-label="Diminuir">−</button><span>' + l.i.qtd + '</span><button type="button" data-n="' + n + '" data-d="1" aria-label="Aumentar">+</button><button type="button" data-n="' + n + '" data-d="x" aria-label="Remover">🗑</button></div></div>';
-    }).join("") + '<p class="tot">Subtotal <b>' + money(subtotal()) + '</b></p><button class="btn" type="button" id="goCheck">Continuar para o checkout</button>';
+    }).join("") + '<p class="tot">Subtotal <b>' + money(subtotal()) + '</b></p><button class="btn" type="button" id="goCheck">Finalizar compra</button>';
     plano(b); $("#goCheck").onclick = function () { $("#dlgCart").close(); abrirCheckout(); }; abrir($("#dlgCart"));
   }
   $("#cartBody").addEventListener("click", function (e) {
@@ -132,7 +146,7 @@
     var d = dados(), msg = validar(d); if (msg) { $("#erro").textContent = msg; return; }
     $("#erro").textContent = ""; var btn = $("#enviar"); btn.disabled = true; btn.textContent = "Enviando…";
     var fim = function () { btn.disabled = false; btn.textContent = "Finalizar pedido"; };
-    if (!L.endpoint) {
+    if (!L.endpoint) { // modo demonstração: nada é enviado
       var sub = subtotal(), fr = L.freteCentavos || 0; mostrarResultado(d, { ok: true, id: "TL-DEMO01", total: sub + fr }, true); fim(); return;
     }
     var ctl = new AbortController(), to = setTimeout(function () { ctl.abort(); }, 25000);
@@ -163,14 +177,6 @@
   }
   $("#dlgCheck").addEventListener("close", function () { if ($("#checkBody").innerHTML.indexOf("registrado") >= 0) { $("#checkBody").innerHTML = checkHtml; location.reload(); } });
 
-  /* ---------- Ponte para a Vitrine 3D ---------- */
-  window.LojaCore = {
-    money: money,
-    adicionar: adicionar,
-    abrirCarrinho: abrirCarrinho,
-    abrirCheckout: abrirCheckout
-  };
-
   /* ---------- Tema, rodapé e início ---------- */
   var tb = $(".theme");
   tb.addEventListener("click", function () { var n = root.dataset.theme === "dark" ? "light" : "dark"; root.dataset.theme = n; try { localStorage.setItem("tl-theme", n); } catch (e) {} });
@@ -184,16 +190,10 @@
     var ctl = new AbortController(), to = setTimeout(function () { ctl.abort(); }, 8000);
     return fetch(L.endpoint + "?action=catalogo&_=" + Date.now(), { signal: ctl.signal, cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) { clearTimeout(to); if (j.ok && j.produtos.length) { fonte = "planilha"; return j.produtos; } return reserva(); }).catch(function () { return reserva(); });
   }
+  window.LojaCore = { prod: prod, adicionar: adicionar, abrirCarrinho: abrirCarrinho, abrirCheckout: abrirCheckout, money: money };
   function aviso(t) { var d = document.createElement("div"); d.className = "demo-bar"; d.textContent = t; document.body.insertBefore(d, document.body.firstChild); }
-  if (!window.LOJA) aviso("Atenção: o arquivo config.js não carregou. Ele precisa começar com window.LOJA = {.");
-  else if (!L.endpoint) aviso("Modo demonstração: endpoint vazio no config.js.");
+  if (!window.LOJA) aviso("Atenção: o arquivo config.js não carregou. Ele precisa começar com window.LOJA = { e não pode conter o código do Code.gs.");
+  else if (!L.endpoint) aviso("Modo demonstração: a loja ainda não está ligada à planilha (endpoint vazio no config.js). Os produtos vêm do produtos.js e os pedidos não são enviados.");
   carregarCarrinho();
-  carregar().then(function (lista) {
-    if (/[?&]debug\b/.test(location.search)) aviso("Catálogo lido de: " + fonte);
-    produtos = lista;
-    carrinho = carrinho.filter(function (i) { return prod(i.id); });
-    salvar();
-    renderCats();
-    renderVitrine();
-  });
+  carregar().then(function (lista) { if (/[?&]debug\b/.test(location.search)) aviso("Catálogo lido de: " + fonte + (fonte === "planilha" ? ". Para mudar preços, edite a aba Produtos da planilha." : ". O produtos.js é só reserva: se a planilha estiver ligada, edite os preços nela.")); produtos = lista; carrinho = carrinho.filter(function (i) { return prod(i.id); }); salvar(); renderCats(); renderGrid(); });
 })();
