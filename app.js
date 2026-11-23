@@ -1,4 +1,4 @@
-/* LOJA TEAM LOBO — vitrine 3D, carrinho, checkout e Pix (JavaScript puro) */
+/* LOJA TEAM LOBO — controlador da sacola, checkout, ViaCEP e Pix BR Code */
 (function () {
   "use strict";
   var L = window.LOJA || {}, root = document.documentElement;
@@ -8,7 +8,7 @@
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
   var produtos = [], carrinho = [], filtro = "Todos", fonte = "reserva (produtos.js)";
 
-  /* ---------- Pix (BR Code) ---------- */
+  /* ---------- Pix (BR Code EMV + CRC16) ---------- */
   function emv(id, v) { return id + ("0" + v.length).slice(-2) + v; }
   function crc16(s) {
     var c = 0xFFFF;
@@ -37,7 +37,7 @@
     cep: function (v) { v = v.replace(/\D/g, "").slice(0, 8); return v.length > 5 ? v.slice(0, 5) + "-" + v.slice(5) : v; }
   };
 
-  /* ---------- Carrinho ---------- */
+  /* ---------- Sacola / Carrinho ---------- */
   function salvar() { try { localStorage.setItem("tl-loja-cart", JSON.stringify(carrinho)); } catch (e) {} atualizaBadge(); }
   function carregarCarrinho() { try { carrinho = JSON.parse(localStorage.getItem("tl-loja-cart") || "[]"); } catch (e) { carrinho = []; } }
   function prod(id) { return produtos.filter(function (p) { return p.id === id; })[0]; }
@@ -56,7 +56,7 @@
     d.addEventListener("click", function (e) { if (e.target === d || (e.target.dataset && "close" in e.target.dataset)) d.close(); });
   });
 
-  /* ---------- Vitrine & Filtros ---------- */
+  /* ---------- Filtros & Vitrine 3D ---------- */
   function foto(p, cls) {
     var mono = esc(p.nome.split(" ").slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase());
     return '<div class="ph ' + (cls || "") + '" data-mono="' + mono + '">' + (p.fotos && p.fotos[0] ? '<img src="' + esc(p.fotos[0]) + '" alt="' + esc(p.nome) + '" loading="lazy" decoding="async">' : "") + "</div>";
@@ -78,10 +78,10 @@
 
   function abrirCarrinho() {
     var ls = linhas(), b = $("#cartBody");
-    if (!ls.length) { b.innerHTML = "<h2>Carrinho</h2><p>Seu carrinho está vazio.</p>"; abrir($("#dlgCart")); return; }
-    b.innerHTML = "<h2>Carrinho</h2>" + ls.map(function (l, n) {
+    if (!ls.length) { b.innerHTML = "<h2>Sua sacola</h2><p>Sua sacola está vazia. Escolha um look na vitrine 3D.</p>"; abrir($("#dlgCart")); return; }
+    b.innerHTML = "<h2>Sua sacola</h2>" + ls.map(function (l, n) {
       return '<div class="item">' + foto(l.p, "mini") + '<div><b>' + esc(l.p.nome) + "</b><small>" + esc([l.i.tam, l.i.cor].filter(Boolean).join(" · ")) + "</small><span>" + money(l.p.preco) + '</span></div><div class="stp"><button type="button" data-n="' + n + '" data-d="-1" aria-label="Diminuir">−</button><span>' + l.i.qtd + '</span><button type="button" data-n="' + n + '" data-d="1" aria-label="Aumentar">+</button><button type="button" data-n="' + n + '" data-d="x" aria-label="Remover">🗑</button></div></div>';
-    }).join("") + '<p class="tot">Subtotal <b>' + money(subtotal()) + '</b></p><button class="btn" type="button" id="goCheck">Finalizar compra</button>';
+    }).join("") + '<p class="tot">Subtotal <b>' + money(subtotal()) + '</b></p><button class="btn" type="button" id="goCheck">Continuar para o checkout</button>';
     plano(b); $("#goCheck").onclick = function () { $("#dlgCart").close(); abrirCheckout(); }; abrir($("#dlgCart"));
   }
   $("#cartBody").addEventListener("click", function (e) {
@@ -185,8 +185,8 @@
     return fetch(L.endpoint + "?action=catalogo&_=" + Date.now(), { signal: ctl.signal, cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) { clearTimeout(to); if (j.ok && j.produtos.length) { fonte = "planilha"; return j.produtos; } return reserva(); }).catch(function () { return reserva(); });
   }
   function aviso(t) { var d = document.createElement("div"); d.className = "demo-bar"; d.textContent = t; document.body.insertBefore(d, document.body.firstChild); }
-  if (!window.LOJA) aviso("Atenção: o arquivo config.js não carregou. Ele precisa começar com window.LOJA = { e não pode conter o código do Code.gs.");
-  else if (!L.endpoint) aviso("Modo demonstração: a loja ainda não está ligada à planilha (endpoint vazio no config.js). Os produtos vêm do produtos.js e os pedidos não são enviados.");
+  if (!window.LOJA) aviso("Atenção: o arquivo config.js não carregou. Ele precisa começar com window.LOJA = {.");
+  else if (!L.endpoint) aviso("Modo demonstração: endpoint vazio no config.js.");
   carregarCarrinho();
   carregar().then(function (lista) {
     if (/[?&]debug\b/.test(location.search)) aviso("Catálogo lido de: " + fonte);
