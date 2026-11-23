@@ -1,5 +1,7 @@
-/* VITRINE 3D "TRY THE LOOK" — Carrossel de modelos com profundidade de campo (desfoque lateral),
-   modo foco isolado ao clicar no modelo e painel lateral sincronizado com cores, tamanhos e sacola. */
+/* VITRINE 3D WEBGL (THREE.JS) — Team Lobo Store
+   - Deslize Esquerda / Direita: navega entre as 4 roupas com profundidade de campo e desfoque lateral.
+   - Deslize Cima / Baixo (ou toque no botão/peça): gira a roupa 180° em 3D para mostrar Frente e Costas.
+   - Inclui modelagem 3D fiel do Conjunto Top e Short Team Lobo (com estampa frontal, brasão na perna e recorte traseiro). */
 (function () {
   "use strict";
   var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -9,18 +11,18 @@
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
 
   var host = $("#vitrine");
-  var looks = [], centerIdx = 0, focused = false;
-  var selecao = {}; // { [lookIdx_pieceIdx]: { corIdx: 0, tam: "M" } }
-  var dragStartX = null, dragMoved = false;
+  var lista = [], centerIdx = 0, isBack = false, dragRotOffset = 0;
+  var selecao = {}; // { [id]: { corIdx: 0, tam: "M" } }
+  var scenes = [], rafId = 0;
 
-  /* ---------- Paleta e ilustração de peças/modelos ---------- */
+  /* ---------- Paleta de cores ---------- */
   var HEX = {
-    preta: "#15181e", preto: "#15181e", branca: "#f0f2f5", branco: "#f0f2f5",
-    cinza: "#8c939e", chumbo: "#393e46", grafite: "#2a2e35",
-    vermelha: "#c1272d", vermelho: "#c1272d", azul: "#1f4fb4", marinho: "#14213d",
-    verde: "#1e7a4a", amarela: "#e6b800", amarelo: "#e6b800", laranja: "#e8742a",
-    rosa: "#e86a9a", roxa: "#6b3fa0", roxo: "#6b3fa0", bege: "#d8c8a8",
-    marrom: "#6b4a2f", prata: "#c4c9d2", off: "#e8e4da"
+    preta: "#14161b", preto: "#14161b", branca: "#f0f2f5", branco: "#f0f2f5",
+    cinza: "#8c939e", chumbo: "#363b44", grafite: "#282c33",
+    vermelha: "#b82329", vermelho: "#b82329", azul: "#1d4aa8", marinho: "#14213d",
+    verde: "#1c7245", amarela: "#dfb100", amarelo: "#dfb100", laranja: "#e06d24",
+    rosa: "#df6291", roxa: "#653b96", roxo: "#653b96", bege: "#d4c3a3",
+    marrom: "#63442b", prata: "#c4c9d2", off: "#e8e4da"
   };
 
   function norm(s) { return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
@@ -29,7 +31,7 @@
     if (m) return "#" + m[1];
     var w = n.split(/[^a-z]+/).filter(Boolean);
     for (var i = 0; i < w.length; i++) if (HEX[w[i]]) return HEX[w[i]];
-    return "#1c2028";
+    return "#16181f";
   }
   function claro(hex) {
     var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/.exec(hex);
@@ -37,126 +39,379 @@
     return (0.299 * parseInt(m[1], 16) + 0.587 * parseInt(m[2], 16) + 0.114 * parseInt(m[3], 16)) / 255 > 0.62;
   }
   function tipoDe(p) {
-    var s = norm((p.nome || "") + " " + (p.categoria || ""));
+    var s = norm((p.id || "") + " " + (p.nome || "") + " " + (p.categoria || ""));
+    if (/conjunto|top/.test(s)) return "conjunto";
     if (/regata|tank/.test(s)) return "regata";
     if (/short|bermuda/.test(s)) return "shorts";
-    if (/moletom|casaco|jaqueta|hoodie/.test(s)) return "moletom";
-    if (/bone|viseira/.test(s)) return "bone";
-    if (/legging|calca/.test(s)) return "calca";
+    if (/moletom|casaco|jaqueta/.test(s)) return "moletom";
     return "camiseta";
   }
 
-  var FORMAS = {
-    camiseta: "M60 20L10 55L30 92L55 80V200H145V80L170 92L190 55L140 20Q100 46 60 20Z",
-    regata: "M62 18V56Q62 82 42 102L48 200H152L158 102Q138 82 138 56V18H118Q100 52 82 18Z",
-    shorts: "M42 20H158L172 150H108L100 84L92 150H28Z",
-    moletom: "M72 20Q100 4 128 20L172 42L192 150L164 158L154 104V204H46V104L36 158L8 150L28 42Z",
-    calca: "M60 12H140L150 44L130 206H106L100 74L94 206H70L50 44Z",
-    bone: "M28 112Q28 42 100 42Q172 42 172 112V122H28Z"
-  };
-  var WOLF = "M10 260L32 205C40 172 62 150 80 132L76 98L84 58L102 90L120 78L166 30L174 34L172 40L143 67L172 55L170 62L133 100L142 112L134 120L148 130L140 142L156 152L150 166L162 176L176 222L178 260Z";
-
-  function pecaSvg(p, cor) {
-    var t = tipoDe(p), hex = hexDe(cor), logoFill = claro(hex) ? "#111318" : "#d8dee6";
-    var s = '<svg viewBox="0 0 200 220" aria-hidden="true">';
-    if (t === "bone") s += '<path d="M14 124Q100 158 186 124L198 138Q100 188 2 138Z" fill="' + hex + '" stroke="rgba(255,255,255,.15)" stroke-width="1.5"/>';
-    s += '<path d="' + FORMAS[t] + '" fill="' + hex + '" stroke="rgba(255,255,255,.16)" stroke-width="1.5" stroke-linejoin="round"/>';
-    s += '<svg x="78" y="76" width="44" height="52" viewBox="0 0 220 260"><path d="' + WOLF + '" fill="' + logoFill + '"/></svg>';
-    return s + "</svg>";
+  /* ---------- Texturas dinâmicas em Canvas para logos Team Lobo ---------- */
+  function drawWolfMark(ctx, cx, cy, scale, color) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(-45, 55);
+    ctx.lineTo(-32, 15);
+    ctx.lineTo(-10, -18);
+    ctx.lineTo(-14, -42);
+    ctx.lineTo(-5, -66);
+    ctx.lineTo(8, -44);
+    ctx.lineTo(22, -52);
+    ctx.lineTo(52, -80);
+    ctx.lineTo(56, -74);
+    ctx.lineTo(36, -54);
+    ctx.lineTo(55, -62);
+    ctx.lineTo(30, -34);
+    ctx.lineTo(36, -24);
+    ctx.lineTo(28, -16);
+    ctx.lineTo(38, -8);
+    ctx.lineTo(32, 2);
+    ctx.lineTo(44, 12);
+    ctx.lineTo(38, 22);
+    ctx.lineTo(48, 32);
+    ctx.lineTo(54, 55);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
 
-  /* Modelo de corpo inteiro vestindo o look (usado quando não há foto de modelo cadastrada) */
-  function modeloLookSvg(look, lookIdx) {
-    var topPeca = look.pecas[0];
-    var botPeca = look.pecas.filter(function (x) { return tipoDe(x) === "shorts" || tipoDe(x) === "calca"; })[0];
-    var capPeca = look.pecas.filter(function (x) { return tipoDe(x) === "bone"; })[0];
-
-    var stTop = getSel(lookIdx, 0, topPeca);
-    var topHex = hexDe((topPeca.cores && topPeca.cores[stTop.corIdx]) || "Preta");
-    var topTipo = tipoDe(topPeca);
-    var logoFill = claro(topHex) ? "#111318" : "#e2e7ee";
-
-    var botIdx = botPeca ? look.pecas.indexOf(botPeca) : -1;
-    var stBot = botPeca ? getSel(lookIdx, botIdx, botPeca) : { corIdx: 0 };
-    var botHex = botPeca ? hexDe((botPeca.cores && botPeca.cores[stBot.corIdx]) || "Grafite") : "#1b1f27";
-
-    var capIdx = capPeca ? look.pecas.indexOf(capPeca) : -1;
-    var stCap = capPeca ? getSel(lookIdx, capIdx, capPeca) : { corIdx: 0 };
-    var capHex = capPeca ? hexDe((capPeca.cores && capPeca.cores[stCap.corIdx]) || "Preto") : "";
-
-    var skin = ["#c89674", "#8d5b3c", "#dfa988", "#6d442c"][lookIdx % 4];
-    var s = '<svg viewBox="0 0 260 520" aria-hidden="true">';
-    // Sombra no chão do estúdio
-    s += '<ellipse cx="130" cy="504" rx="68" ry="10" fill="rgba(0,0,0,.38)"/>';
-    // Pernas e tênis esportivos
-    s += '<path d="M98 310 L92 468 L114 468 L122 310 Z" fill="' + skin + '"/>';
-    s += '<path d="M138 310 L146 468 L168 468 L162 310 Z" fill="' + skin + '"/>';
-    s += '<path d="M84 466 Q102 460 118 468 L122 494 L76 494 Q76 476 84 466 Z" fill="#f1f3f6"/>';
-    s += '<path d="M142 468 Q158 460 176 466 Q184 476 184 494 L138 494 Z" fill="#f1f3f6"/>';
-    s += '<rect x="76" y="488" width="46" height="7" rx="3" fill="#2a2f38"/><rect x="138" y="488" width="46" height="7" rx="3" fill="#2a2f38"/>';
-    // Braços atléticos
-    s += '<path d="M74 128 L52 248 L70 254 L88 152 Z" fill="' + skin + '"/>';
-    s += '<path d="M186 128 L208 248 L190 254 L172 152 Z" fill="' + skin + '"/>';
-    // Pescoço e cabeça
-    s += '<rect x="118" y="84" width="24" height="28" rx="10" fill="' + skin + '"/>';
-    s += '<ellipse cx="130" cy="62" rx="23" ry="28" fill="' + skin + '"/>';
-    s += '<path d="M107 56 Q108 30 130 30 Q152 30 153 56 Q146 42 130 42 Q114 42 107 56 Z" fill="#14161b"/>';
-    if (capPeca) {
-      s += '<path d="M105 48 Q130 24 155 48 Z" fill="' + capHex + '"/>';
-      s += '<path d="M104 48 Q130 56 164 50 L158 55 Q130 61 104 52 Z" fill="' + capHex + '" stroke="rgba(255,255,255,.2)" stroke-width="1"/>';
-    }
-    // Shorts / Calça
-    if (botPeca && tipoDe(botPeca) === "calca") {
-      s += '<path d="M90 238 H170 L172 470 H142 L130 305 L118 470 H88 Z" fill="' + botHex + '" stroke="rgba(255,255,255,.14)" stroke-width="1.5"/>';
-    } else {
-      s += '<path d="M90 238 H170 L178 344 H135 L130 286 L125 344 H82 Z" fill="' + botHex + '" stroke="rgba(255,255,255,.14)" stroke-width="1.5"/>';
-    }
-    // Peça superior (Camiseta, Regata ou Moletom)
-    if (topTipo === "regata") {
-      s += '<path d="M96 106 H112 Q130 134 148 106 H164 L172 246 H88 Z" fill="' + topHex + '" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>';
-    } else if (topTipo === "moletom") {
-      s += '<path d="M94 104 Q130 122 166 104 L194 126 L210 246 L186 252 L172 164 V252 H88 V164 L74 252 L50 246 L66 126 Z" fill="' + topHex + '" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>';
-    } else {
-      s += '<path d="M94 106 Q130 126 166 106 L196 132 L182 166 L168 156 V248 H92 V156 L78 166 L64 132 Z" fill="' + topHex + '" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>';
-    }
-    // Logo Lobo Team Lobo no peito
-    s += '<svg x="112" y="148" width="36" height="42" viewBox="0 0 220 260"><path d="' + WOLF + '" fill="' + logoFill + '"/></svg>';
-    return s + "</svg>";
+  function makeTopFrontTexture(lightFabric) {
+    var cv = document.createElement("canvas");
+    cv.width = 512; cv.height = 256;
+    var ctx = cv.getContext("2d");
+    var ink = lightFabric ? "#121419" : "#f4f6f9";
+    ctx.fillStyle = ink;
+    ctx.font = "900 50px 'Barlow Condensed', Arial, sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "right";
+    ctx.fillText("TEAM", 224, 132);
+    ctx.textAlign = "left";
+    ctx.fillText("LOBO", 286, 132);
+    drawWolfMark(ctx, 255, 132, 0.42, ink);
+    var tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
   }
 
-  /* ---------- Montagem dos Looks a partir dos produtos ---------- */
-  function montarLooks(produtos) {
-    if (!produtos.length) return [];
-    var bottoms = produtos.filter(function (p) { var t = tipoDe(p); return t === "shorts" || t === "calca"; });
-    var tops = produtos.filter(function (p) { var t = tipoDe(p); return t !== "shorts" && t !== "calca"; });
-    if (!tops.length) tops = produtos.slice();
+  function makeShortCrestTexture(lightFabric) {
+    var cv = document.createElement("canvas");
+    cv.width = 256; cv.height = 256;
+    var ctx = cv.getContext("2d");
+    var ink = lightFabric ? "#121419" : "#f4f6f9";
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.arc(128, 122, 68, -Math.PI * 0.15, Math.PI * 1.15);
+    ctx.stroke();
+    // Barra de supino estilizada no topo
+    ctx.fillStyle = ink;
+    ctx.fillRect(62, 76, 132, 8);
+    ctx.fillRect(54, 62, 10, 36);
+    ctx.fillRect(192, 62, 10, 36);
+    drawWolfMark(ctx, 128, 126, 0.56, ink);
+    ctx.font = "900 26px 'Barlow Condensed', Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("TEAM LOBO", 128, 222);
+    var tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
 
-    return tops.map(function (top, idx) {
-      var pecas = [top];
-      if (bottoms.length) pecas.push(bottoms[idx % bottoms.length]);
-      var titulo = top.look || ("Look " + top.nome.replace(/\s*\(exemplo\)/i, ""));
-      var total = pecas.reduce(function (s, x) { return s + x.preco; }, 0);
-      return { id: top.id, titulo: titulo, novo: top.novo, pecas: pecas, total: total };
+  function makeChestCrestTexture(lightFabric) {
+    var cv = document.createElement("canvas");
+    cv.width = 256; cv.height = 256;
+    var ctx = cv.getContext("2d");
+    var ink = lightFabric ? "#121419" : "#e6ebf2";
+    drawWolfMark(ctx, 128, 108, 0.85, ink);
+    ctx.fillStyle = ink;
+    ctx.font = "900 32px 'Barlow Condensed', Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("TEAM LOBO", 128, 200);
+    var tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  /* ---------- Construtores de Malhas 3D Reais (Frente & Costas) ---------- */
+  function buildGarment3D(tipo, hexColor) {
+    var group = new THREE.Group();
+    var isLight = claro(hexColor);
+    var mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(hexColor),
+      roughness: 0.72,
+      metalness: 0.08,
+      side: THREE.DoubleSide
+    });
+    var seamMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(hexColor).multiplyScalar(isLight ? 0.86 : 1.35),
+      roughness: 0.8,
+      metalness: 0.05
+    });
+
+    if (tipo === "conjunto") {
+      /* === 1. TOP CROPPED DE ALCINHA (Frente + Costas + Alças) === */
+      var topGeo = new THREE.CylinderGeometry(0.58, 0.52, 0.62, 48, 16, true);
+      var pos = topGeo.attributes.position;
+      for (var i = 0; i < pos.count; i++) {
+        var x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+        // Achatamento anatômico do tronco (mais largo no eixo X, mais fino no eixo Z)
+        z *= 0.64;
+        // Volume frontal do busto (z > 0) e costas retas (z < 0)
+        if (z > 0) {
+          var bust = Math.exp(-Math.pow((Math.abs(x) - 0.22) / 0.22, 2)) * Math.exp(-Math.pow(y / 0.22, 2));
+          z += bust * 0.14;
+        } else {
+          // Costas levemente cavadas na parte superior
+          if (y > 0.15) y -= 0.04 * (1 - Math.abs(x) / 0.58);
+        }
+        pos.setXYZ(i, x, y, z);
+      }
+      topGeo.computeVertexNormals();
+      var topMesh = new THREE.Mesh(topGeo, mat);
+      topMesh.position.y = 0.86;
+      group.add(topMesh);
+
+      // Elástico inferior do top
+      var hemGeo = new THREE.TorusGeometry(0.51, 0.022, 12, 48);
+      hemGeo.rotateX(Math.PI / 2);
+      hemGeo.scale(1, 1, 0.64);
+      var hemMesh = new THREE.Mesh(hemGeo, seamMat);
+      hemMesh.position.y = 0.56;
+      group.add(hemMesh);
+
+      // Duas alças finas (frente -> ombro -> costas)
+      [-0.34, 0.34].forEach(function (sx) {
+        var curve = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(sx, 1.14, 0.29),
+          new THREE.Vector3(sx * 0.96, 1.46, 0.12),
+          new THREE.Vector3(sx * 0.94, 1.47, -0.10),
+          new THREE.Vector3(sx * 0.95, 1.12, -0.30)
+        ]);
+        var strapGeo = new THREE.TubeGeometry(curve, 24, 0.017, 8, false);
+        group.add(new THREE.Mesh(strapGeo, mat));
+      });
+
+      // Estampa frontal "TEAM [Lobo] LOBO" curvada no busto
+      var logoGeo = new THREE.CylinderGeometry(0.61, 0.59, 0.34, 32, 1, true, -0.58, 1.16);
+      var lPos = logoGeo.attributes.position;
+      for (var j = 0; j < lPos.count; j++) {
+        var lx = lPos.getX(j), ly = lPos.getY(j), lz = lPos.getZ(j) * 0.66;
+        var lb = Math.exp(-Math.pow((Math.abs(lx) - 0.22) / 0.22, 2)) * Math.exp(-Math.pow(ly / 0.22, 2));
+        lPos.setXYZ(j, lx, ly, lz + lb * 0.145 + 0.012);
+      }
+      logoGeo.computeVertexNormals();
+      var logoMat = new THREE.MeshBasicMaterial({ map: makeTopFrontTexture(isLight), transparent: true, depthWrite: false });
+      var logoMesh = new THREE.Mesh(logoGeo, logoMat);
+      logoMesh.position.y = 0.86;
+      group.add(logoMesh);
+
+      /* === 2. SHORT CINTURA ALTA EMPINA BUMBUM (Frente + Costas com Scrunch) === */
+      var waistGeo = new THREE.CylinderGeometry(0.51, 0.64, 0.64, 48, 20, true);
+      var wPos = waistGeo.attributes.position;
+      for (var k = 0; k < wPos.count; k++) {
+        var wx = wPos.getX(k), wy = wPos.getY(k), wz = wPos.getZ(k);
+        wz *= 0.66;
+        // Volume anatômico dos glúteos nas costas (wz < 0) + vinco central (empina bumbum)
+        if (wz < 0 && wy < 0.08) {
+          var glute = Math.exp(-Math.pow((Math.abs(wx) - 0.24) / 0.24, 2)) * Math.exp(-Math.pow((wy + 0.12) / 0.22, 2));
+          var scrunch = Math.exp(-Math.pow(wx / 0.055, 2)) * Math.exp(-Math.pow((wy + 0.10) / 0.24, 2));
+          wz -= glute * 0.19;
+          wz += scrunch * 0.09; // sulco central traseiro
+        }
+        wPos.setXYZ(k, wx, wy, wz);
+      }
+      waistGeo.computeVertexNormals();
+      var waistMesh = new THREE.Mesh(waistGeo, mat);
+      waistMesh.position.y = 0.02;
+      group.add(waistMesh);
+
+      // Costura em V do cós traseiro + costura vertical do scrunch
+      var vCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-0.48, 0.12, -0.18),
+        new THREE.Vector3(0, 0.03, -0.43),
+        new THREE.Vector3(0.48, 0.12, -0.18)
+      ]);
+      group.add(new THREE.Mesh(new THREE.TubeGeometry(vCurve, 24, 0.011, 8, false), seamMat));
+
+      var scrunchCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 0.03, -0.43),
+        new THREE.Vector3(0, -0.12, -0.37),
+        new THREE.Vector3(0, -0.28, -0.39)
+      ]);
+      group.add(new THREE.Mesh(new THREE.TubeGeometry(scrunchCurve, 16, 0.013, 8, false), seamMat));
+
+      // Pernas do short (esquerda e direita)
+      [-0.27, 0.27].forEach(function (lx, idx) {
+        var legGeo = new THREE.CylinderGeometry(0.28, 0.25, 0.56, 32, 8, true);
+        legGeo.scale(1, 1, 0.88);
+        var legMesh = new THREE.Mesh(legGeo, mat);
+        legMesh.position.set(lx, -0.52, -0.02);
+        legMesh.rotation.z = idx === 0 ? -0.05 : 0.05;
+        group.add(legMesh);
+      });
+
+      // Brasão circular TEAM LOBO na coxa esquerda (visível de frente)
+      var crestGeo = new THREE.CylinderGeometry(0.275, 0.26, 0.34, 24, 1, true, -0.45, 0.9);
+      crestGeo.scale(1, 1, 0.9);
+      var crestMat = new THREE.MeshBasicMaterial({ map: makeShortCrestTexture(isLight), transparent: true, depthWrite: false });
+      var crestMesh = new THREE.Mesh(crestGeo, crestMat);
+      crestMesh.position.set(0.27, -0.49, 0.005);
+      crestMesh.rotation.set(0, 0.22, 0.05);
+      group.add(crestMesh);
+
+    } else if (tipo === "camiseta" || tipo === "regata") {
+      /* === CAMISETA OU REGATA ESPORTIVA === */
+      var bodyGeo = new THREE.CylinderGeometry(0.62, 0.56, 1.55, 44, 16, true);
+      bodyGeo.scale(1, 1, 0.62);
+      var bodyMesh = new THREE.Mesh(bodyGeo, mat);
+      bodyMesh.position.y = 0.25;
+      group.add(bodyMesh);
+
+      // Gola
+      var collarGeo = new THREE.TorusGeometry(0.26, 0.03, 12, 32);
+      collarGeo.rotateX(Math.PI / 2.2);
+      var collar = new THREE.Mesh(collarGeo, seamMat);
+      collar.position.set(0, 1.02, 0.04);
+      group.add(collar);
+
+      if (tipo === "camiseta") {
+        [-0.74, 0.74].forEach(function (sx, idx) {
+          var slv = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.21, 0.58, 24, 1, true), mat);
+          slv.position.set(sx, 0.76, 0);
+          slv.rotation.z = idx === 0 ? 0.56 : -0.56;
+          group.add(slv);
+        });
+      }
+
+      // Estampa no peito
+      var cGeo = new THREE.CylinderGeometry(0.635, 0.62, 0.48, 28, 1, true, -0.45, 0.9);
+      cGeo.scale(1, 1, 0.63);
+      var cMat = new THREE.MeshBasicMaterial({ map: makeChestCrestTexture(isLight), transparent: true, depthWrite: false });
+      var cMesh = new THREE.Mesh(cGeo, cMat);
+      cMesh.position.y = 0.54;
+      group.add(cMesh);
+
+    } else {
+      /* === SHORTS DE TREINO === */
+      var sWaist = new THREE.Mesh(new THREE.CylinderGeometry(0.56, 0.60, 0.42, 40, 1, true), mat);
+      sWaist.scale.set(1, 1, 0.66);
+      sWaist.position.y = 0.46;
+      group.add(sWaist);
+
+      [-0.29, 0.29].forEach(function (lx, idx) {
+        var sLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.29, 0.68, 28, 1, true), mat);
+        sLeg.scale.set(1, 1, 0.85);
+        sLeg.position.set(lx, -0.05, 0);
+        sLeg.rotation.z = idx === 0 ? -0.06 : 0.06;
+        group.add(sLeg);
+      });
+
+      var scGeo = new THREE.CylinderGeometry(0.315, 0.30, 0.34, 24, 1, true, -0.4, 0.8);
+      scGeo.scale(1, 1, 0.86);
+      var scMat = new THREE.MeshBasicMaterial({ map: makeShortCrestTexture(isLight), transparent: true, depthWrite: false });
+      var scMesh = new THREE.Mesh(scGeo, scMat);
+      scMesh.position.set(0.29, -0.14, 0.01);
+      scMesh.rotation.y = 0.22;
+      group.add(scMesh);
+    }
+
+    return group;
+  }
+
+  /* ---------- Gerenciamento dos Renderizadores WebGL ---------- */
+  function disposeScenes() {
+    cancelAnimationFrame(rafId);
+    scenes.forEach(function (s) { if (s.renderer) s.renderer.dispose(); });
+    scenes = [];
+  }
+
+  function createCardViewer(container, p, idx) {
+    if (!window.THREE) {
+      container.innerHTML = '<div style="padding:1rem;text-align:center"><b>' + esc(p.nome) + '</b></div>';
+      return null;
+    }
+    var w = 320, h = 460;
+    var renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(w, h, false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    container.innerHTML = "";
+    container.appendChild(renderer.domElement);
+
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(34, w / h, 0.1, 20);
+    camera.position.set(0, 0.18, 4.35);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.95));
+    var key = new THREE.DirectionalLight(0xffffff, 1.35);
+    key.position.set(2.2, 3.2, 3.5);
+    scene.add(key);
+    var rim = new THREE.DirectionalLight(0xdbeafe, 0.85);
+    rim.position.set(-2.5, 2.0, -3.2);
+    scene.add(rim);
+    var fill = new THREE.DirectionalLight(0xffffff, 0.45);
+    fill.position.set(0, -2.5, 2.0);
+    scene.add(fill);
+
+    var st = getSel(p);
+    var corInicial = (p.cores && p.cores[st.corIdx]) || "Preto";
+    var tipo = tipoDe(p);
+    var pivot = new THREE.Group();
+    pivot.add(buildGarment3D(tipo, hexDe(corInicial)));
+    scene.add(pivot);
+
+    return {
+      idx: idx,
+      produto: p,
+      tipo: tipo,
+      renderer: renderer,
+      scene: scene,
+      camera: camera,
+      pivot: pivot,
+      currentRotY: 0,
+      setColor: function (hex) {
+        while (pivot.children.length) pivot.remove(pivot.children[0]);
+        pivot.add(buildGarment3D(tipo, hex));
+      }
+    };
+  }
+
+  function animateLoop(t) {
+    rafId = requestAnimationFrame(animateLoop);
+    var sec = (t || 0) * 0.001;
+    scenes.forEach(function (sc) {
+      var isCenter = sc.idx === centerIdx;
+      var targetY = (isCenter && isBack ? Math.PI : 0) + (isCenter ? dragRotOffset : 0);
+      sc.currentRotY += (targetY - sc.currentRotY) * 0.16;
+      sc.pivot.rotation.y = sc.currentRotY;
+      // Flutuação sutil de estúdio na peça em destaque
+      sc.pivot.position.y = isCenter && !reduce ? Math.sin(sec * 2.1) * 0.035 : 0;
+      sc.renderer.render(sc.scene, sc.camera);
     });
   }
 
-  function getSel(lIdx, pIdx, p) {
-    var key = lIdx + "_" + pIdx;
-    if (!selecao[key]) {
-      var tams = (p && p.tamanhos) || [];
-      selecao[key] = { corIdx: 0, tam: tams[0] || "" };
+  function getSel(p) {
+    if (!selecao[p.id]) {
+      var tams = p.tamanhos || [];
+      selecao[p.id] = { corIdx: 0, tam: tams[0] || "" };
     }
-    return selecao[key];
+    return selecao[p.id];
   }
 
-  /* ---------- Renderização do Estúdio 3D ---------- */
+  /* ---------- Renderização Principal da Vitrine ---------- */
   function render(produtos) {
-    looks = montarLooks(produtos);
-    centerIdx = Math.min(centerIdx, Math.max(0, looks.length - 1));
-    focused = false;
+    disposeScenes();
+    lista = produtos;
+    centerIdx = Math.min(centerIdx, Math.max(0, lista.length - 1));
+    isBack = false;
+    dragRotOffset = 0;
 
-    if (!looks.length) {
-      host.innerHTML = '<p class="vazio">Nenhuma peça encontrada para esse filtro.</p>';
+    if (!lista.length) {
+      host.innerHTML = '<p class="vazio">Nenhuma peça encontrada.</p>';
       return;
     }
 
@@ -164,96 +419,72 @@
       '<div class="look-studio">' +
         '<div class="look-stage" id="lookStage">' +
           '<div class="stage-top">' +
-            '<button type="button" class="back-looks" id="btnBackLooks" hidden>← Voltar aos looks</button>' +
-            '<span class="stage-hint" id="stageHint">Deslize ou clique no modelo para focar</span>' +
+            '<button type="button" class="side-pill" id="btnFlipSide" aria-label="Virar peça frente e costas"><span class="side-dot"></span><span id="sideLabel">Vista: Frente · Girar ↻</span></button>' +
+            '<span class="stage-hint">← → Troca peça · ↑ ↓ Vira costas</span>' +
           '</div>' +
-          '<div class="look-track" id="lookTrack" role="region" aria-label="Carrossel 3D de looks"></div>' +
+          '<div class="look-track" id="lookTrack" role="region" aria-label="Palco 3D interativo"></div>' +
           '<div class="stage-foot">' +
-            '<button type="button" class="nav-arrow" id="prevLook" aria-label="Look anterior">‹</button>' +
+            '<button type="button" class="nav-arrow" id="prevLook" aria-label="Peça anterior">‹</button>' +
             '<div class="dots" id="lookDots"></div>' +
-            '<button type="button" class="nav-arrow" id="nextLook" aria-label="Próximo look">›</button>' +
+            '<button type="button" class="nav-arrow" id="nextLook" aria-label="Próxima peça">›</button>' +
           '</div>' +
         '</div>' +
-        '<aside class="look-panel" id="lookPanel" aria-label="Peças do look selecionado"></aside>' +
+        '<aside class="look-panel" id="lookPanel" aria-label="Detalhes da peça selecionada"></aside>' +
       '</div>';
 
     var track = $("#lookTrack", host);
-    track.innerHTML = looks.map(function (lk, i) {
-      return '<button type="button" class="look-card" data-look="' + i + '" aria-label="' + esc(lk.titulo) + '">' +
-        (lk.novo ? '<span class="look-badge">Novo</span>' : "") +
+    track.innerHTML = lista.map(function (p, i) {
+      return '<div class="look-card" role="button" tabindex="0" data-look="' + i + '" aria-label="' + esc(p.nome) + '">' +
+        (p.novo ? '<span class="look-badge">Novo</span>' : "") +
         '<div class="model-box" id="mbox-' + i + '"></div>' +
-      '</button>';
+      '</div>';
     }).join("");
 
-    $("#lookDots", host).innerHTML = looks.map(function (lk, i) {
-      return '<button type="button" class="dot" data-dot="' + i + '" aria-label="Ver ' + esc(lk.titulo) + '"></button>';
+    $("#lookDots", host).innerHTML = lista.map(function (p, i) {
+      return '<button type="button" class="dot" data-dot="' + i + '" aria-label="Ver ' + esc(p.nome) + '"></button>';
     }).join("");
+
+    lista.forEach(function (p, i) {
+      var viewer = createCardViewer($("#mbox-" + i, host), p, i);
+      if (viewer) scenes.push(viewer);
+    });
 
     bindEvents();
-    atualizarTudo();
-  }
-
-  function atualizarModelos() {
-    looks.forEach(function (lk, i) {
-      var box = $("#mbox-" + i, host);
-      if (!box) return;
-      var top = lk.pecas[0];
-      var st = getSel(i, 0, top);
-      var fotos = top.fotos || [];
-      var url = ((top.cores || []).length > 1 && fotos.length === top.cores.length) ? fotos[st.corIdx] : fotos[0];
-      if (url) {
-        var im = new Image();
-        im.alt = lk.titulo;
-        im.onerror = function () { box.innerHTML = modeloLookSvg(lk, i); };
-        box.innerHTML = "";
-        box.appendChild(im);
-        im.src = url;
-      } else {
-        box.innerHTML = modeloLookSvg(lk, i);
-      }
-    });
+    atualizarPosicoes3D();
+    atualizarPainel();
+    animateLoop(0);
   }
 
   function atualizarPosicoes3D() {
-    var stage = $("#lookStage", host);
-    if (!stage) return;
-    stage.classList.toggle("is-focused", focused);
-    $("#btnBackLooks", host).hidden = !focused;
-    $("#stageHint", host).textContent = focused ? "Modo foco · Escolha cor e tamanho ao lado" : "Clique no modelo central para focar";
+    var pill = $("#btnFlipSide", host);
+    var lbl = $("#sideLabel", host);
+    if (pill && lbl) {
+      pill.classList.toggle("is-back", isBack);
+      lbl.textContent = isBack ? "Vista: Costas · Ver frente ↻" : "Vista: Frente · Ver costas ↻";
+    }
 
     var mobile = window.innerWidth <= 860;
-    var stepX = mobile ? 145 : 195;
+    var stepX = mobile ? 145 : 200;
 
     $$(".look-card", host).forEach(function (card, i) {
       var off = i - centerIdx;
       var abs = Math.abs(off);
-      var isCenter = off === 0;
-      card.classList.toggle("is-center", isCenter);
       card.style.zIndex = String(20 - abs);
 
-      if (focused) {
-        card.style.setProperty("--tx", isCenter ? "0px" : (off * stepX * 1.4) + "px");
-        card.style.setProperty("--tz", isCenter ? "20px" : "-220px");
-        card.style.setProperty("--ry", "0deg");
-        card.style.setProperty("--sc", isCenter ? "1.06" : "0.75");
-        card.style.setProperty("--op", isCenter ? "1" : "0");
-        card.style.setProperty("--bl", isCenter ? "0px" : "10px");
-        card.style.pointerEvents = isCenter ? "auto" : "none";
-      } else {
-        var tx = off * stepX;
-        var tz = -abs * 130;
-        var ry = reduce ? 0 : Math.max(-28, Math.min(28, -off * 14));
-        var sc = Math.max(0.66, 1 - abs * 0.16);
-        var op = abs > 2 ? 0 : Math.max(0.45, 1 - abs * 0.24);
-        var bl = reduce ? 0 : Math.min(7, abs * 3.2);
-        card.style.setProperty("--tx", tx + "px");
-        card.style.setProperty("--tz", tz + "px");
-        card.style.setProperty("--ry", ry + "deg");
-        card.style.setProperty("--sc", sc.toFixed(3));
-        card.style.setProperty("--op", op.toFixed(2));
-        card.style.setProperty("--bl", bl.toFixed(1) + "px");
-        card.style.pointerEvents = abs > 2 ? "none" : "auto";
-      }
+      var tx = off * stepX;
+      var tz = -abs * 140;
+      var ry = reduce ? 0 : Math.max(-28, Math.min(28, -off * 14));
+      var sc = Math.max(0.66, 1 - abs * 0.16);
+      var op = abs > 2 ? 0 : Math.max(0.45, 1 - abs * 0.24);
+      var bl = reduce ? 0 : Math.min(7, abs * 3.2);
+
+      card.style.setProperty("--tx", tx + "px");
+      card.style.setProperty("--tz", tz + "px");
+      card.style.setProperty("--ry", ry + "deg");
+      card.style.setProperty("--sc", sc.toFixed(3));
+      card.style.setProperty("--op", op.toFixed(2));
+      card.style.setProperty("--bl", bl.toFixed(1) + "px");
+      card.style.pointerEvents = abs > 2 ? "none" : "auto";
     });
 
     $$(".dot", host).forEach(function (d, i) {
@@ -263,192 +494,158 @@
 
   function atualizarPainel() {
     var panel = $("#lookPanel", host);
-    var lk = looks[centerIdx];
-    if (!panel || !lk) return;
+    var p = lista[centerIdx];
+    if (!panel || !p) return;
 
-    var pecasHtml = lk.pecas.map(function (p, pIdx) {
-      var st = getSel(centerIdx, pIdx, p);
-      var cores = p.cores || [];
-      var tams = p.tamanhos || [];
-      var corAtual = cores[st.corIdx] || "";
-      var fotos = p.fotos || [];
-      var thumbUrl = (cores.length > 1 && fotos.length === cores.length) ? fotos[st.corIdx] : fotos[0];
+    var st = getSel(p);
+    var cores = p.cores || [];
+    var tams = p.tamanhos || [];
+    var corAtual = cores[st.corIdx] || "";
 
-      var swHtml = cores.length ? '<div class="sw-row">' + cores.map(function (c, k) {
-        return '<button type="button" class="sw-dot" data-p="' + pIdx + '" data-cor="' + k + '" aria-label="Cor ' + esc(c) + '" aria-pressed="' + (k === st.corIdx) + '" style="--c:' + hexDe(c) + '"></button>';
-      }).join("") + "</div>" : "";
+    var swHtml = cores.length ? '<div class="piece-row"><span class="piece-label">Cor: <b>' + esc(corAtual) + '</b></span><div class="sw-row">' +
+      cores.map(function (c, k) {
+        return '<button type="button" class="sw-dot" data-cor="' + k + '" aria-label="Cor ' + esc(c) + '" aria-pressed="' + (k === st.corIdx) + '" style="--c:' + hexDe(c) + '"></button>';
+      }).join("") + '</div></div>' : "";
 
-      var tamHtml = tams.length ? '<div class="tam-row">' + tams.map(function (t) {
-        return '<button type="button" class="tam-pill" data-p="' + pIdx + '" data-tam="' + esc(t) + '" aria-pressed="' + (t === st.tam) + '">' + esc(t) + "</button>";
-      }).join("") + "</div>" : "";
-
-      return '<div class="piece-card">' +
-        '<div class="piece-thumb" data-thumb="' + pIdx + '">' + (thumbUrl ? '<img src="' + esc(thumbUrl) + '" alt="' + esc(p.nome) + '">' : pecaSvg(p, corAtual)) + '</div>' +
-        '<div class="piece-body">' +
-          '<div class="piece-top"><span class="piece-name">' + esc(p.nome) + '</span><span class="piece-price">' + C().money(p.preco) + '</span></div>' +
-          '<div class="piece-controls">' + swHtml + tamHtml + '</div>' +
-          '<div class="piece-foot">' +
-            '<span class="piece-var">' + esc([corAtual, st.tam].filter(Boolean).join(" · ") || "Tamanho único") + '</span>' +
-            '<button type="button" class="add-one" data-addone="' + pIdx + '">+ Adicionar</button>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
-    }).join("");
+    var tamHtml = tams.length ? '<div class="piece-row"><span class="piece-label">Tamanho</span><div class="tam-row">' +
+      tams.map(function (t) {
+        return '<button type="button" class="tam-pill" data-tam="' + esc(t) + '" aria-pressed="' + (t === st.tam) + '">' + esc(t) + '</button>';
+      }).join("") + '</div></div>' : "";
 
     panel.innerHTML =
       '<div>' +
         '<div class="panel-head">' +
           '<div>' +
-            '<span class="panel-kicker">Look ' + (centerIdx + 1) + ' de ' + looks.length + '</span>' +
-            '<h2 class="panel-title">' + esc(lk.titulo) + '</h2>' +
-            '<p class="panel-sub">' + lk.pecas.length + (lk.pecas.length > 1 ? ' peças combinadas' : ' peça selecionada') + '</p>' +
+            '<span class="panel-kicker">Peça ' + (centerIdx + 1) + ' de ' + lista.length + (p.categoria ? ' · ' + esc(p.categoria) : '') + '</span>' +
+            '<h2 class="panel-title">' + esc(p.nome) + '</h2>' +
+            '<p class="panel-sub">' + esc(p.descricao || "") + '</p>' +
           '</div>' +
-          '<span class="panel-total">' + C().money(lk.total) + '</span>' +
+          '<span class="panel-total">' + C().money(p.preco) + '</span>' +
         '</div>' +
-        '<div class="piece-list">' + pecasHtml + '</div>' +
+        '<div class="piece-card">' + swHtml + tamHtml + '</div>' +
       '</div>' +
       '<div class="panel-foot">' +
         '<p class="panel-msg" id="panelMsg" role="status"></p>' +
         '<div class="panel-actions">' +
-          '<button type="button" class="btn" id="addLookBtn">Adicionar look à sacola</button>' +
+          '<button type="button" class="btn" id="addLookBtn">Adicionar à sacola</button>' +
           '<button type="button" class="btn ghost" id="buyLookBtn">Comprar</button>' +
         '</div>' +
       '</div>';
-
-    // Fallback se alguma imagem real falhar ao carregar
-    $$(".piece-thumb img", panel).forEach(function (im) {
-      im.onerror = function () {
-        var idx = +im.parentNode.dataset.thumb;
-        var p = lk.pecas[idx];
-        var st = getSel(centerIdx, idx, p);
-        im.parentNode.innerHTML = pecaSvg(p, (p.cores && p.cores[st.corIdx]) || "");
-      };
-    });
-  }
-
-  function atualizarTudo() {
-    atualizarModelos();
-    atualizarPosicoes3D();
-    atualizarPainel();
   }
 
   function irPara(idx) {
-    if (!looks.length) return;
-    centerIdx = (idx + looks.length) % looks.length;
+    if (!lista.length) return;
+    centerIdx = (idx + lista.length) % lista.length;
+    isBack = false;
+    dragRotOffset = 0;
     atualizarPosicoes3D();
     atualizarPainel();
   }
 
   function bindEvents() {
     var track = $("#lookTrack", host);
+    var startX = null, startY = null, axis = null, moved = false, lastDy = 0;
 
-    // Clique nos modelos 3D: lateral traz para o centro; central ativa modo foco isolado
-    host.addEventListener("click", function (e) {
-      if (dragMoved) { dragMoved = false; return; }
+    track.addEventListener("pointerdown", function (e) {
+      startX = e.clientX;
+      startY = e.clientY;
+      axis = null;
+      moved = false;
+      lastDy = 0;
+      if (track.setPointerCapture) {
+        try { track.setPointerCapture(e.pointerId); } catch (err) {}
+      }
+    });
 
-      var card = e.target.closest(".look-card");
-      if (card) {
-        var idx = +card.dataset.look;
-        if (idx !== centerIdx) {
-          focused = false;
-          irPara(idx);
-        } else {
-          focused = !focused;
-          atualizarPosicoes3D();
-        }
-        return;
+    track.addEventListener("pointermove", function (e) {
+      if (startX == null || startY == null) return;
+      var dx = e.clientX - startX;
+      var dy = e.clientY - startY;
+
+      if (!axis && Math.hypot(dx, dy) > 12) {
+        axis = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+        moved = true;
       }
 
-      if (e.target.closest("#btnBackLooks")) {
-        focused = false;
+      if (axis === "x" && Math.abs(dx) > 44) {
+        startX = e.clientX;
+        irPara(centerIdx + (dx < 0 ? 1 : -1));
+      } else if (axis === "y") {
+        lastDy = dy;
+        dragRotOffset = Math.max(-Math.PI, Math.min(Math.PI, (-dy / 160) * Math.PI));
+      }
+    });
+
+    var finishGesture = function (e) {
+      if (axis === "y" && Math.abs(lastDy) > 32) {
+        isBack = !isBack;
         atualizarPosicoes3D();
-        return;
+      } else if (!moved && e && e.target) {
+        var card = e.target.closest(".look-card");
+        if (card) {
+          var idx = +card.dataset.look;
+          if (idx !== centerIdx) irPara(idx);
+          else { isBack = !isBack; atualizarPosicoes3D(); }
+        }
       }
+      startX = null;
+      startY = null;
+      axis = null;
+      dragRotOffset = 0;
+    };
+
+    track.addEventListener("pointerup", finishGesture);
+    track.addEventListener("pointercancel", function () { startX = null; startY = null; axis = null; dragRotOffset = 0; });
+
+    host.addEventListener("click", function (e) {
+      if (e.target.closest("#btnFlipSide")) { isBack = !isBack; atualizarPosicoes3D(); return; }
       if (e.target.closest("#prevLook")) { irPara(centerIdx - 1); return; }
       if (e.target.closest("#nextLook")) { irPara(centerIdx + 1); return; }
 
       var dot = e.target.closest("[data-dot]");
       if (dot) { irPara(+dot.dataset.dot); return; }
 
-      // Troca de cor no painel
       var sw = e.target.closest("[data-cor]");
       if (sw) {
-        var pIdx = +sw.dataset.p, cIdx = +sw.dataset.cor;
-        var st = getSel(centerIdx, pIdx, looks[centerIdx].pecas[pIdx]);
-        st.corIdx = cIdx;
-        atualizarModelos();
+        var p = lista[centerIdx];
+        var st = getSel(p);
+        st.corIdx = +sw.dataset.cor;
+        var sc = scenes[centerIdx];
+        if (sc) sc.setColor(hexDe(p.cores[st.corIdx]));
         atualizarPainel();
         return;
       }
 
-      // Troca de tamanho no painel
       var tm = e.target.closest("[data-tam]");
       if (tm) {
-        var pIdx2 = +tm.dataset.p;
-        var st2 = getSel(centerIdx, pIdx2, looks[centerIdx].pecas[pIdx2]);
-        st2.tam = tm.dataset.tam;
+        var p2 = lista[centerIdx];
+        getSel(p2).tam = tm.dataset.tam;
         atualizarPainel();
         return;
       }
 
-      // Adicionar uma peça individual
-      var addOne = e.target.closest("[data-addone]");
-      if (addOne) {
-        var pIdx3 = +addOne.dataset.addone;
-        var peca = looks[centerIdx].pecas[pIdx3];
-        var st3 = getSel(centerIdx, pIdx3, peca);
-        C().adicionar(peca.id, st3.tam, (peca.cores && peca.cores[st3.corIdx]) || "", 1);
-        addOne.textContent = "✓ Na sacola";
-        addOne.classList.add("added");
-        var msg = $("#panelMsg", host);
-        if (msg) { msg.className = "panel-msg ok"; msg.textContent = peca.nome + " adicionada à sacola!"; }
-        setTimeout(function () { if (addOne) { addOne.textContent = "+ Adicionar"; addOne.classList.remove("added"); } }, 1400);
-        return;
-      }
-
-      // Adicionar look completo ou comprar direto
       if (e.target.closest("#addLookBtn") || e.target.closest("#buyLookBtn")) {
         var buyNow = !!e.target.closest("#buyLookBtn");
-        var lk = looks[centerIdx];
-        lk.pecas.forEach(function (peca, idx) {
-          var st = getSel(centerIdx, idx, peca);
-          C().adicionar(peca.id, st.tam, (peca.cores && peca.cores[st.corIdx]) || "", 1);
-        });
+        var peca = lista[centerIdx];
+        var sel = getSel(peca);
+        C().adicionar(peca.id, sel.tam, (peca.cores && peca.cores[sel.corIdx]) || "", 1);
         if (buyNow) {
           C().abrirCheckout();
         } else {
-          var msg2 = $("#panelMsg", host);
-          if (msg2) { msg2.className = "panel-msg ok"; msg2.textContent = "Look completo adicionado à sacola ✓"; }
+          var msg = $("#panelMsg", host);
+          if (msg) { msg.className = "panel-msg ok"; msg.textContent = peca.nome + " adicionada à sacola ✓"; }
         }
       }
     });
-
-    // Arraste por mouse e dedo (swipe horizontal no celular)
-    track.addEventListener("pointerdown", function (e) {
-      dragStartX = e.clientX;
-      dragMoved = false;
-    });
-    track.addEventListener("pointermove", function (e) {
-      if (dragStartX == null) return;
-      var dx = e.clientX - dragStartX;
-      if (Math.abs(dx) > 36) {
-        dragMoved = true;
-        dragStartX = e.clientX;
-        irPara(centerIdx + (dx < 0 ? 1 : -1));
-      }
-    });
-    var endDrag = function () { dragStartX = null; };
-    track.addEventListener("pointerup", endDrag);
-    track.addEventListener("pointercancel", endDrag);
 
     window.addEventListener("resize", atualizarPosicoes3D);
   }
 
   document.addEventListener("keydown", function (e) {
     if (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
-    if (e.key === "Escape" && focused) { focused = false; atualizarPosicoes3D(); }
-    else if (e.key === "ArrowLeft") irPara(centerIdx - 1);
+    if (e.key === "ArrowLeft") irPara(centerIdx - 1);
     else if (e.key === "ArrowRight") irPara(centerIdx + 1);
+    else if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); isBack = !isBack; atualizarPosicoes3D(); }
   });
 
   window.Vitrine = { render: render };
