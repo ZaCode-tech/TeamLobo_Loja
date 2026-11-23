@@ -1,8 +1,48 @@
-/* PRODUTOS DE EXEMPLO — usados enquanto a loja não está ligada à planilha.
-   Com a planilha (Apps Script) configurada, os produtos e preços passam a vir dela e este arquivo vira reserva.
-   preco em CENTAVOS: 8990 = R$ 89,90. Fotos em assets/produtos/. */
+/* PRODUTOS DE RESERVA — usados enquanto a planilha não responde.
+   preco em CENTAVOS: 7990 = R$ 79,90. */
 window.PRODUTOS = [
-  { id: "camiseta-lobo", nome: "Camiseta Team Lobo (exemplo)", categoria: "Camisetas", preco: 10, tamanhos: ["P", "M", "G", "GG"], cores: ["Preta"], fotos: ["assets/produtos/camiseta-1.jpg"], novo: true, descricao: "Camiseta de treino com a marca Team Lobo." },
-  { id: "regata-lobo", nome: "Regata Team Lobo (exemplo)", categoria: "Regatas", preco: 7990, tamanhos: ["P", "M", "G", "GG"], cores: ["Preta", "Branca"], fotos: ["assets/produtos/regata-1.jpg"], novo: true, descricao: "Regata para treino." },
-  { id: "shorts-lobo", nome: "Shorts de treino (exemplo)", categoria: "Shorts", preco: 9990, tamanhos: ["P", "M", "G", "GG"], cores: ["Preto"], fotos: ["assets/produtos/shorts-1.jpg"], novo: false, descricao: "Shorts leve para treino." }
+  {
+    id: "camiseta-lobo",
+    nome: "Top Cropped Alcinha Team Lobo",
+    categoria: "Tops",
+    preco: 7990,
+    tamanhos: ["P", "M", "G", "GG"],
+    cores: ["Preta", "Branca", "Chumbo", "Vermelha"],
+    fotos: ["assets/camiseta-lobo.png"],
+    novo: true,
+    descricao: "Top cropped esportivo de alcinha com acabamento em viés, barra dupla e estampa frontal Team Lobo."
+  },
+  {
+    id: "camiseta-treino",
+    nome: "Camiseta Dry-Fit Team Lobo",
+    categoria: "Camisetas",
+    preco: 8990,
+    tamanhos: ["P", "M", "G", "GG"],
+    cores: ["Preta", "Branca", "Chumbo"],
+    fotos: [],
+    novo: true,
+    descricao: "Camiseta esportiva respirável com estampa frontal Team Lobo."
+  },
+  {
+    id: "regata-lobo",
+    nome: "Regata Treino Team Lobo",
+    categoria: "Regatas",
+    preco: 7490,
+    tamanhos: ["P", "M", "G", "GG"],
+    cores: ["Preta", "Branca", "Grafite"],
+    fotos: [],
+    novo: false,
+    descricao: "Regata cavada leve para musculação e alta performance."
+  },
+  {
+    id: "shorts-lobo",
+    nome: "Shorts de Treino Team Lobo",
+    categoria: "Shorts",
+    preco: 9990,
+    tamanhos: ["P", "M", "G", "GG"],
+    cores: ["Preto", "Grafite", "Azul"],
+    fotos: [],
+    novo: false,
+    descricao: "Shorts esportivo de treino com brasão Team Lobo na perna."
+  }
 ];
