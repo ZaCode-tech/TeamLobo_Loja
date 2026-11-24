@@ -14,7 +14,7 @@ window.PRODUTOS = [
       "assets/produtos/camiseta-lobo-costas.png"
     ],
     novo: true,
-    descricao: "Top cropped esportivo de alcinha com acabamento em viés, barra dupla e estampa frontal Team Lobo."
+    descricao: "Top cropped esportivo de alcinha com acabamento reforçado, toque macio e estampa frontal Team Lobo."
   },
   {
     id: "camiseta-treino",
@@ -28,7 +28,7 @@ window.PRODUTOS = [
       "assets/produtos/camiseta-treino-costas.png"
     ],
     novo: true,
-    descricao: "Camiseta esportiva respirável com estampa frontal Team Lobo."
+    descricao: "Camiseta esportiva leve e respirável de secagem rápida para treinos intensos."
   },
   {
     id: "regata-lobo",
@@ -42,7 +42,7 @@ window.PRODUTOS = [
       "assets/produtos/regata-lobo-costas.png"
     ],
     novo: false,
-    descricao: "Regata cavada leve para musculação e alta performance."
+    descricao: "Regata cavada de alta liberdade de movimento para musculação e corrida."
   },
   {
     id: "shorts-lobo",
@@ -56,6 +56,6 @@ window.PRODUTOS = [
       "assets/produtos/shorts-lobo-costas.png"
     ],
     novo: false,
-    descricao: "Shorts esportivo de treino com brasão Team Lobo na perna."
+    descricao: "Shorts esportivo com cós anatômico e brasão Team Lobo na perna."
   }
 ];
