@@ -1,8 +1,5 @@
 /* ==========================================================================
-   TEAM LOBO STORE — SISTEMA VISUAL 60 / 30 / 10 + ANIMAÇÕES 3D
-   - 60% Preto Fosco (--bg, --surface, --raise)
-   - 30% Prata Metalizada (--chrome, --silver, --text)
-   - 10% Azul Glacial Elétrico (--accent: #38bdf8)
+   TEAM LOBO STORE — 60% PRETO FOSCO · 30% PRATA METALIZADA · 10% AZUL GLACIAL
    ========================================================================== */
 :root{
   color-scheme:dark light;
@@ -10,7 +7,7 @@
   --bg:#07080a;
   --surface:#0d0f13;
   --raise:#13161d;
-  --matte-card:rgba(13,15,19,.78);
+  --matte-card:rgba(13,15,19,.8);
   /* 30% Prata Metalizada */
   --text:#eef2f7;
   --muted:#9aa3b2;
@@ -21,7 +18,7 @@
   --glint:rgba(255,255,255,.98);
   --on-chrome:#060709;
   --chrome:linear-gradient(135deg,var(--c1) 0%,var(--c2) 26%,var(--c3) 50%,var(--c4) 74%,var(--c5) 100%);
-  /* 10% Destaque Azul Glacial Elétrico */
+  /* 10% Azul Glacial Elétrico */
   --accent:#38bdf8;
   --accent-deep:#0284c7;
   --accent-glow:rgba(56,189,248,.32);
@@ -38,7 +35,7 @@
 
 [data-theme=light]{
   color-scheme:light;
-  --bg:#e5e9ef;--surface:#f3f5f8;--raise:#ffffff;--matte-card:rgba(255,255,255,.84);
+  --bg:#e5e9ef;--surface:#f3f5f8;--raise:#ffffff;--matte-card:rgba(255,255,255,.86);
   --text:#0a0c10;--muted:#495361;--silver:#2d3540;
   --line:rgba(10,12,16,.14);--line-bright:rgba(10,12,16,.28);
   --c1:#0a0c10;--c2:#2e3642;--c3:#6d7887;--c4:#252c36;--c5:#0a0c10;
@@ -87,7 +84,7 @@ p{color:var(--muted)}
 section{padding:clamp(2.8rem,7vw,5.2rem) var(--pad)}
 .skip{position:fixed;left:1rem;top:-4rem;z-index:100;padding:.7rem 1rem;background:var(--accent);color:var(--on-accent);border-radius:.5rem;font-weight:700}.skip:focus{top:1rem}
 
-/* Botões metálicos e destaque 10% */
+/* Botões */
 .btn{
   position:relative;display:inline-flex;align-items:center;justify-content:center;gap:.5rem;
   padding:.9rem 1.6rem;border-radius:999px;background:var(--chrome);color:var(--on-chrome);
@@ -150,7 +147,7 @@ section{padding:clamp(2.8rem,7vw,5.2rem) var(--pad)}
 .i-sun,.i-moon{display:none}[data-theme=dark] .i-sun,[data-theme=light] .i-moon{display:block}
 
 /* ==========================================================================
-   HERO CINEMATOGRÁFICO COM VÍDEO DE FUNDO, ZOOM DINÂMICO E EFEITOS 3D
+   HERO COM VÍDEO DE FUNDO DINÂMICO E ZOOM
    ========================================================================== */
 .hero-cinema{
   position:relative;
@@ -162,11 +159,10 @@ section{padding:clamp(2.8rem,7vw,5.2rem) var(--pad)}
 }
 .hero-media{position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none}
 
-/* Vídeo de fundo com animação de zoom dinâmico e contraste esportivo */
 .hero-video{
   position:absolute;inset:-4%;width:108%;height:108%;object-fit:cover;
-  opacity:.52;
-  filter:contrast(1.16) saturate(1.08) brightness(.84);
+  opacity:.54;
+  filter:contrast(1.16) saturate(1.08) brightness(.85);
   animation:heroBeatZoom 14s ease-in-out infinite alternate;
   will-change:transform,filter;
 }
@@ -177,7 +173,6 @@ section{padding:clamp(2.8rem,7vw,5.2rem) var(--pad)}
   100%{transform:scale(1.15) translate3d(-.6%,-1%,0) rotate(-.2deg);filter:contrast(1.24) brightness(.94)}
 }
 
-/* Pulso de iluminação e flash dinâmico sobre o vídeo */
 .hero-zoom-fx{
   position:absolute;inset:0;
   background:
@@ -195,13 +190,13 @@ section{padding:clamp(2.8rem,7vw,5.2rem) var(--pad)}
 .hero-scanlines{
   position:absolute;inset:0;
   background:repeating-linear-gradient(to bottom,rgba(255,255,255,.025) 0 1px,transparent 1px 4px);
-  opacity:.45;
+  opacity:.4;
 }
 .hero-particles{position:absolute;inset:0;width:100%;height:100%}
 .hero-vignette{
   position:absolute;inset:0;
   background:
-    linear-gradient(90deg,rgba(7,8,10,.94) 0%,rgba(7,8,10,.76) 48%,rgba(7,8,10,.38) 100%),
+    linear-gradient(90deg,rgba(7,8,10,.94) 0%,rgba(7,8,10,.74) 48%,rgba(7,8,10,.36) 100%),
     linear-gradient(180deg,rgba(7,8,10,.55) 0%,transparent 28%,rgba(7,8,10,.98) 100%);
 }
 
@@ -238,7 +233,6 @@ section{padding:clamp(2.8rem,7vw,5.2rem) var(--pad)}
 .hero-metrics b{font:900 1.45rem/1 var(--font-d);color:#fff;letter-spacing:.03em}
 .hero-metrics span{font-size:.8rem;color:#9aa3b2;text-transform:uppercase;letter-spacing:.08em}
 
-/* Selo flutuante 3D à direita do Hero */
 .hero-badge-3d{display:grid;place-items:center;perspective:1000px}
 .badge-card-3d{
   position:relative;overflow:hidden;
@@ -260,10 +254,10 @@ section{padding:clamp(2.8rem,7vw,5.2rem) var(--pad)}
 .badge-card-3d img{position:relative;z-index:1;width:82px;height:82px;border-radius:50%;border:2px solid var(--silver);box-shadow:0 0 24px var(--accent-glow)}
 .badge-tag{position:relative;z-index:1;font-size:.72rem;font-weight:800;letter-spacing:.18em;color:var(--accent)}
 .badge-card-3d strong{position:relative;z-index:1;font:900 1.75rem/1 var(--font-d);color:#fff;letter-spacing:.04em}
-.badge-card-3d small{position:relative;z-index:1;font-size:.76rem;color:#9aa3b2}
+.badge-card-3d small{position:relative;z-index:1;font-size:.78rem;color:#9aa3b2}
 
 /* ---------- FILTROS E SEÇÕES ---------- */
-.section-head{display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;flex-wrap:wrap;margin-bottom:.6rem}
+.section-head{display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;flex-wrap:wrap;margin-bottom:1.3rem}
 .bar{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap}
 .chips{display:flex;gap:.45rem;flex-wrap:wrap}
 .chip{
@@ -277,12 +271,10 @@ section{padding:clamp(2.8rem,7vw,5.2rem) var(--pad)}
   box-shadow:0 6px 18px rgba(0,0,0,.3);
 }
 #ord{padding:.5rem 1rem;border:1px solid var(--line);border-radius:999px;background:var(--surface);cursor:pointer}
-.dica{max-width:66ch;margin-bottom:1.1rem;font-size:.94rem}
-.dica b{color:var(--accent)}
 .vazio{text-align:center;padding:3rem 0}
 
 /* ==========================================================================
-   VITRINE 3D INTERATIVA (CABIDE CROMADO + FRENTE/COSTAS + ZOOM 3D)
+   EXIBIÇÃO DAS PEÇAS
    ========================================================================== */
 #vitrine{position:relative}
 .look-studio{display:grid;grid-template-columns:1.18fr .82fr;gap:clamp(1.2rem,3vw,2.4rem);align-items:stretch}
@@ -299,7 +291,6 @@ section{padding:clamp(2.8rem,7vw,5.2rem) var(--pad)}
   overflow:hidden;
 }
 
-/* Pedestal holográfico 3D sob a roupa */
 .stage-pedestal{
   position:absolute;left:50%;bottom:3.6rem;transform:translateX(-50%) rotateX(72deg);
   width:240px;height:240px;border-radius:50%;pointer-events:none;
@@ -308,10 +299,10 @@ section{padding:clamp(2.8rem,7vw,5.2rem) var(--pad)}
   box-shadow:0 0 36px rgba(56,189,248,.22);
 }
 
-.stage-top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;z-index:25}
-.stage-controls{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
+.stage-top{display:flex;align-items:center;justify-content:flex-end;gap:.5rem;z-index:25}
+.stage-controls{display:flex;align-items:center;gap:.45rem}
 .side-pill{
-  display:inline-flex;align-items:center;gap:.45rem;padding:.45rem .9rem;
+  display:inline-flex;align-items:center;gap:.45rem;padding:.45rem .95rem;
   border:1px solid var(--line-bright);border-radius:999px;
   background:var(--matte-card);backdrop-filter:blur(10px);
   color:var(--text);font-size:.83rem;font-weight:600;cursor:pointer;
@@ -321,7 +312,6 @@ section{padding:clamp(2.8rem,7vw,5.2rem) var(--pad)}
 .side-pill.active{border-color:var(--accent);background:rgba(56,189,248,.16);color:#fff;box-shadow:0 0 16px var(--accent-glow)}
 .side-dot{width:.52rem;height:.52rem;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);transition:transform .3s}
 .side-pill.is-back .side-dot{background:#fff;transform:scale(1.3)}
-.stage-hint{font-size:.8rem;color:var(--muted)}
 
 .look-track{
   position:relative;flex:1;display:grid;place-items:center;min-height:405px;
@@ -357,7 +347,7 @@ section{padding:clamp(2.8rem,7vw,5.2rem) var(--pad)}
 .dot{width:.55rem;height:.55rem;border-radius:999px;border:0;background:var(--line-bright);cursor:pointer;transition:width .28s var(--ease),background .25s}
 .dot[aria-current=true]{width:1.8rem;background:var(--accent);box-shadow:0 0 10px var(--accent-glow)}
 
-/* Painel lateral da peça selecionada */
+/* Painel da peça */
 .look-panel{
   display:flex;flex-direction:column;justify-content:space-between;gap:1.2rem;
   padding:1.5rem;border-radius:var(--r);
@@ -400,7 +390,7 @@ section{padding:clamp(2.8rem,7vw,5.2rem) var(--pad)}
 .panel-actions{display:flex;gap:.75rem;flex-wrap:wrap}
 .panel-actions .btn{flex:1;min-width:140px}
 
-/* ---------- COMO COMPRAR (CARDS 3D) ---------- */
+/* ---------- COMO COMPRAR ---------- */
 .how ol{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.3rem;margin-top:1.2rem}
 .how-card{
   position:relative;padding:1.4rem;border-radius:var(--r);
@@ -414,7 +404,6 @@ section{padding:clamp(2.8rem,7vw,5.2rem) var(--pad)}
 }
 .how-card h3{margin-bottom:.35rem}
 
-/* Reveal ao rolar */
 .reveal{opacity:0;transform:translateY(26px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
 .reveal.in{opacity:1;transform:none}
 
