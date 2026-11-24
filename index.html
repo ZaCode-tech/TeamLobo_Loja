@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,700;0,800;0,900;1,800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 <a class="skip" href="#conteudo">Pular para o conteúdo</a>
@@ -36,8 +36,8 @@
 </header>
 
 <main id="conteudo">
-  <!-- HERO COM VÍDEO DE FUNDO DINÂMICO, ZOOM E EFEITOS 3D -->
-  <section class="hero-cinema" aria-label="Apresentação Team Lobo Store">
+  <!-- HERO COM VÍDEO DE TREINO EM DESTAQUE -->
+  <section class="hero-cinema" aria-label="Coleção Team Lobo">
     <div class="hero-media" aria-hidden="true">
       <video id="heroVideo" class="hero-video" autoplay muted loop playsinline poster="assets/teamlobo.jpg">
         <source src="assets/hero-treino.mp4" type="video/mp4">
@@ -50,17 +50,17 @@
 
     <div class="wrap hero-grid">
       <div class="hero-copy" data-tilt data-tilt-max="5">
-        <span class="hero-pill"><span class="pulse-dot"></span> Coleção Performance · Alta Intensidade</span>
+        <span class="hero-pill"><span class="pulse-dot"></span> Coleção Oficial · Treino &amp; Performance</span>
         <h1>Roupas esportivas <span class="chrome">Team Lobo</span></h1>
-        <p>Vista a armadura de quem treina pesado. Explore cada peça em 3D no cabide, gire frente e costas e finalize com Pix ou cartão.</p>
+        <p>Peças desenvolvidas para máximo desempenho nos treinos e estilo dentro e fora da academia. Escolha seu modelo e vista a marca.</p>
         <div class="hero-cta">
-          <a class="btn btn-accent" href="#produtos">Explorar Vitrine 3D</a>
-          <a class="btn ghost" href="#como-comprar">Como funciona</a>
+          <a class="btn btn-accent" href="#produtos">Comprar agora</a>
+          <a class="btn ghost" href="#como-comprar">Como comprar</a>
         </div>
         <div class="hero-metrics">
-          <div><b>360°</b><span>Visualização 3D</span></div>
           <div><b>Dry-Tech</b><span>Tecido respirável</span></div>
-          <div><b>Pix</b><span>Aprovação rápida</span></div>
+          <div><b>Modelagem</b><span>Corte anatômico</span></div>
+          <div><b>Envio rápido</b><span>Para todo o Brasil</span></div>
         </div>
       </div>
 
@@ -68,21 +68,21 @@
         <div class="badge-card-3d">
           <div class="badge-shine"></div>
           <img src="assets/teamlobo.jpg" alt="" width="88" height="88">
-          <span class="badge-tag">ED. OFICIAL</span>
+          <span class="badge-tag">COLEÇÃO OFICIAL</span>
           <strong>TEAM LOBO</strong>
-          <small>60% Matte · 30% Chrome · 10% Volt Blue</small>
+          <small>Performance · Conforto · Estilo</small>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- VITRINE 3D INTERATIVA -->
+  <!-- CATÁLOGO DE PRODUTOS -->
   <section id="produtos" class="reveal">
     <div class="wrap">
       <div class="section-head">
         <div>
-          <span class="eyebrow">Arara Digital Interativa</span>
-          <h2>Vitrine <span class="chrome">3D</span></h2>
+          <span class="eyebrow">Coleção Oficial</span>
+          <h2>Nossas <span class="chrome">Peças</span></h2>
         </div>
         <div class="bar">
           <div class="chips" id="cats" role="group" aria-label="Categorias"></div>
@@ -93,7 +93,6 @@
           </select>
         </div>
       </div>
-      <p class="dica">Arraste para os lados <b>(← →)</b> para girar e trocar de roupa · Arraste para cima ou baixo <b>(↑ ↓)</b> para ver frente e costas.</p>
       <div id="vitrine"></div>
     </div>
   </section>
@@ -101,23 +100,23 @@
   <!-- COMO COMPRAR -->
   <section id="como-comprar" class="how reveal">
     <div class="wrap">
-      <span class="eyebrow">Simples e direto</span>
+      <span class="eyebrow">Compra rápida</span>
       <h2>Como <span class="chrome">comprar</span></h2>
       <ol>
         <li class="how-card" data-tilt data-tilt-max="8">
           <b>01</b>
-          <h3>Inspecione em 3D</h3>
-          <p>Gire a peça no cabide, confira frente e costas, escolha a cor e o tamanho ideal.</p>
+          <h3>Escolha sua peça</h3>
+          <p>Selecione o modelo, a cor e o tamanho ideal para o seu treino.</p>
         </li>
         <li class="how-card" data-tilt data-tilt-max="8">
           <b>02</b>
-          <h3>Pague com facilidade</h3>
-          <p>Preencha seus dados de entrega e pague via Pix (QR Code instantâneo) ou cartão.</p>
+          <h3>Finalize o pedido</h3>
+          <p>Informe seu endereço de entrega e pague com Pix ou cartão.</p>
         </li>
         <li class="how-card" data-tilt data-tilt-max="8">
           <b>03</b>
-          <h3>Receba o comprovante</h3>
-          <p>Assim que a loja confirmar o pagamento, o comprovante em PDF chega direto no seu e-mail.</p>
+          <h3>Receba em casa</h3>
+          <p>Acompanhe a confirmação no seu e-mail e vista a marca Team Lobo.</p>
         </li>
       </ol>
     </div>
@@ -166,9 +165,9 @@
 
 <script src="vendor/qrcode.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<script src="config.js?v=3"></script>
-<script src="produtos.js?v=3"></script>
-<script src="vitrine3d.js?v=3"></script>
-<script src="app.js?v=3"></script>
+<script src="config.js?v=4"></script>
+<script src="produtos.js?v=4"></script>
+<script src="vitrine3d.js?v=4"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
