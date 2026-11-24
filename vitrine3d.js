@@ -1,9 +1,9 @@
 /* VITRINE 3D WEBGL (THREE.JS) — Team Lobo Store
-   - Transforma as imagens de assets/produtos/ (Frente + Costas) em modelos 3D pendurados no cabide cromado 3D.
-   - Arrastar para o lado (← →): gira a peça de lado em 3D e troca a seleção de roupa.
-   - Arrastar para cima/baixo (↑ ↓) ou tocar na peça: gira 180° mostrando Frente e Costas. */
+   - Converte automaticamente as imagens de assets/produtos/ (Frente + Costas) em modelos 3D pendurados no cabide cromado 3D.
+   - Arrastar para os lados (← →): gira a peça de lado em 3D e troca o produto no carrossel.
+   - Arrastar para cima/baixo (↑ ↓) ou tocar na peça: gira 180° mostrando Frente e Costas.
+   - Controles extras: Zoom 3D (inspecionar tecido) e Giro 360° automático. */
 
-/* Remove fundo liso automaticamente caso a imagem enviada não seja PNG transparente */
 function recortaCanvas(cv) {
   var w = cv.width, h = cv.height, ctx = cv.getContext("2d"), im = ctx.getImageData(0, 0, w, h), d = im.data, i, x, y, p;
   var n = 0, r = 0, g = 0, b = 0, borda = [];
@@ -28,7 +28,7 @@ function recortaCanvas(cv) {
     if ((x > 0 && bg[p - 1]) || (x < w - 1 && bg[p + 1]) || (y > 0 && bg[p - w]) || (y < h - 1 && bg[p + w])) {
       d[i + 3] = Math.round(255 * Math.min(1, Math.max(0, (dist(i) - TOL * 0.6) / (TOL * 1.2))));
     }
-    if (d[i + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y < y1) y1 = y; }
+    if (d[i + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
   }
   if (x1 <= x0 || y1 <= y0 || (x1 - x0) * (y1 - y0) < w * h * 0.05) return null;
   ctx.putImageData(im, 0, 0);
@@ -47,18 +47,15 @@ function recortaCanvas(cv) {
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
 
   var host = $("#vitrine");
-  var lista = [], centerIdx = 0, isBack = false, dragRotOffset = 0, dragShift = 0;
+  var lista = [], centerIdx = 0, isBack = false, autoSpin = false, zoom3D = false;
+  var dragRotOffset = 0, dragShift = 0, spinAngle = 0;
   var selecao = {};
   var scenes = [], rafId = 0, pendingList = null;
 
-  /* Garante que o Three.js esteja carregado mesmo se o index.html ainda não tiver a tag script */
   function ensureThree(cb) {
     if (window.THREE) return cb();
-    var existing = document.querySelector('script[data-three-loader]');
-    if (existing) {
-      existing.addEventListener("load", cb, { once: true });
-      return;
-    }
+    var existing = document.querySelector("script[data-three-loader]");
+    if (existing) { existing.addEventListener("load", cb, { once: true }); return; }
     var s = document.createElement("script");
     s.src = "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js";
     s.setAttribute("data-three-loader", "1");
@@ -98,7 +95,7 @@ function recortaCanvas(cv) {
     return "camiseta";
   }
 
-  /* ---------- Resolução das 2 imagens (Frente e Costas) em assets/produtos/ ---------- */
+  /* ---------- Imagens Frente e Costas em assets/produtos/ ---------- */
   function resolveFotoUrl(raw) {
     if (!raw) return "";
     raw = String(raw).trim();
@@ -108,15 +105,12 @@ function recortaCanvas(cv) {
 
   function getImagePair(p, corIdx) {
     var fotos = (p.fotos || []).map(resolveFotoUrl).filter(Boolean);
-    var frontUrl = "";
-    var backUrl = "";
+    var frontUrl = "", backUrl = "";
 
     if (p.fotoFrente || p.fotoCostas) {
       frontUrl = resolveFotoUrl(p.fotoFrente);
       backUrl = resolveFotoUrl(p.fotoCostas);
     } else if (fotos.length >= 2) {
-      // Padrão da planilha (fotos separadas por "|"): fotos[0] = frente, fotos[1] = costas
-      // Ou pares por cor: [frenteCor0, costasCor0, frenteCor1, costasCor1...]
       var coresLen = (p.cores || []).length;
       if (coresLen > 1 && fotos.length >= coresLen * 2) {
         frontUrl = fotos[corIdx * 2];
@@ -131,7 +125,6 @@ function recortaCanvas(cv) {
       frontUrl = "assets/produtos/" + p.id + ".png";
     }
 
-    // Se não informou a URL de costas explicitamente, procura automaticamente "<nome>-costas.<ext>"
     if (!backUrl && frontUrl && /\.(png|webp|jpe?g)(\?.*)?$/i.test(frontUrl)) {
       backUrl = frontUrl.replace(/\.(png|webp|jpe?g)(\?.*)?$/i, "-costas.$1$2");
     }
@@ -167,18 +160,18 @@ function recortaCanvas(cv) {
     });
   }
 
-  /* ---------- Cabide Metálico Cromado 3D ---------- */
+  /* ---------- Cabide Metálico Cromado 3D (30% Prata Metalizada) ---------- */
   function buildHanger3D(halfSpan, yNeck, isBottomClip) {
     var hanger = new THREE.Group();
     var chromeMat = new THREE.MeshStandardMaterial({
-      color: 0xe8edf5,
-      metalness: 0.90,
-      roughness: 0.18
+      color: 0xeef3fa,
+      metalness: 0.92,
+      roughness: 0.16
     });
     var darkChromeMat = new THREE.MeshStandardMaterial({
-      color: 0x9aa3b0,
-      metalness: 0.85,
-      roughness: 0.25
+      color: 0x8f99a8,
+      metalness: 0.88,
+      roughness: 0.24
     });
 
     var w = Math.max(0.46, Math.min(0.76, halfSpan || 0.60));
@@ -225,7 +218,7 @@ function recortaCanvas(cv) {
     return hanger;
   }
 
-  /* ---------- Conversor Imagem (Frente + Costas) -> Modelo 3D Volumétrico no Cabide ---------- */
+  /* ---------- Conversor Imagem (Frente + Costas) -> Modelo 3D Volumétrico ---------- */
   function createAutoBackTexture(rgb, alphaCanvas) {
     var w = alphaCanvas.width, h = alphaCanvas.height;
     var cv = document.createElement("canvas");
@@ -236,15 +229,14 @@ function recortaCanvas(cv) {
     ctx.fillRect(0, 0, w, h);
 
     var grad = ctx.createLinearGradient(0, 0, w, 0);
-    grad.addColorStop(0, "rgba(0,0,0,0.22)");
+    grad.addColorStop(0, "rgba(0,0,0,0.24)");
     grad.addColorStop(0.25, "rgba(255,255,255,0.05)");
-    grad.addColorStop(0.5, "rgba(255,255,255,0.09)");
+    grad.addColorStop(0.5, "rgba(255,255,255,0.10)");
     grad.addColorStop(0.75, "rgba(255,255,255,0.05)");
-    grad.addColorStop(1, "rgba(0,0,0,0.22)");
+    grad.addColorStop(1, "rgba(0,0,0,0.24)");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
-    // Espelha a silhueta horizontalmente para alinhar com a vista traseira
     ctx.globalCompositeOperation = "destination-in";
     ctx.translate(w, 0);
     ctx.scale(-1, 1);
@@ -292,7 +284,7 @@ function recortaCanvas(cv) {
 
     var fabricRgb = count > 20
       ? [Math.round(rSum / count), Math.round(gSum / count), Math.round(bSum / count)]
-      : [24, 26, 32];
+      : [20, 22, 27];
 
     if (!canRead || maxX <= minX || maxY <= minY) {
       minX = 12; maxX = S - 12; minY = 12; maxY = S - 12;
@@ -301,7 +293,6 @@ function recortaCanvas(cv) {
       }
     }
 
-    // Calcula mapa de profundidade 3D a partir do recorte da roupa
     var dist = new Float32Array(S * S);
     var INF = 999;
     for (var i = 0; i < S * S; i++) dist[i] = mask[i] ? INF : 0;
@@ -344,7 +335,6 @@ function recortaCanvas(cv) {
     var meshH = meshW / aspect;
     if (meshH > 1.52) { meshH = 1.52; meshW = meshH * aspect; }
 
-    // Detecta alças ou ombros no topo da foto para apoiar no cabide cromado 3D
     var scanLimitY = Math.min(maxY, minY + Math.round((maxY - minY) * 0.16));
     var leftSumX = 0, leftCnt = 0, rightSumX = 0, rightCnt = 0;
     var midX = (minX + maxX) * 0.5;
@@ -361,7 +351,6 @@ function recortaCanvas(cv) {
     var topEdgeY = 0.25 + meshH * 0.5;
     rootGroup.add(buildHanger3D(hangerHalfSpan, topEdgeY + 0.14, false));
 
-    // Texturas Frente e Costas
     var frontTex = new THREE.Texture(frontImg);
     frontTex.colorSpace = THREE.SRGBColorSpace;
     frontTex.anisotropy = 4;
@@ -379,11 +368,10 @@ function recortaCanvas(cv) {
 
     var materialColor = isOriginalColor ? new THREE.Color(0xffffff) : new THREE.Color(tintHex);
 
-    // Malha 3D Frontal (+Z) e Malha 3D das Costas (-Z)
     var segX = 68, segY = 76;
     var frontGeo = new THREE.PlaneGeometry(meshW, meshH, segX, segY);
     var backGeo = new THREE.PlaneGeometry(meshW, meshH, segX, segY);
-    backGeo.rotateY(Math.PI); // vira a malha traseira 180° para ler a imagem de costas sem espelhar texto
+    backGeo.rotateY(Math.PI);
 
     var uMin = minX / S, uMax = (maxX + 1) / S;
     var vTop = 1 - (minY / S), vBot = 1 - ((maxY + 1) / S);
@@ -413,7 +401,7 @@ function recortaCanvas(cv) {
       fUv.setXY(vi, u, v);
 
       bPos.setZ(vi, zBack);
-      bUv.setXY(vi, backImg ? (nx) : u, backImg ? (1 - ny) : v);
+      bUv.setXY(vi, backImg ? nx : u, backImg ? (1 - ny) : v);
     }
 
     frontGeo.computeVertexNormals();
@@ -424,7 +412,7 @@ function recortaCanvas(cv) {
       color: materialColor,
       transparent: true,
       alphaTest: 0.16,
-      roughness: 0.58,
+      roughness: 0.56,
       metalness: 0.08
     });
 
@@ -433,7 +421,7 @@ function recortaCanvas(cv) {
       color: materialColor,
       transparent: true,
       alphaTest: 0.16,
-      roughness: 0.65,
+      roughness: 0.64,
       metalness: 0.06
     });
 
@@ -445,7 +433,7 @@ function recortaCanvas(cv) {
     rootGroup.add(frontMesh);
     rootGroup.add(backMesh);
 
-    // Borda lateral 3D unindo frente e costas (espessura visível quando gira de lado)
+    // Borda lateral 3D unindo frente e costas
     var rimMat = new THREE.MeshStandardMaterial({
       color: isOriginalColor
         ? new THREE.Color("rgb(" + fabricRgb[0] + "," + fabricRgb[1] + "," + fabricRgb[2] + ")")
@@ -541,7 +529,7 @@ function recortaCanvas(cv) {
     return rootGroup;
   }
 
-  /* ---------- Renderizadores WebGL ---------- */
+  /* ---------- Renderizadores WebGL (Iluminação Prata + Azul Glacial 10%) ---------- */
   function disposeScenes() {
     cancelAnimationFrame(rafId);
     scenes.forEach(function (s) { if (s.renderer) s.renderer.dispose(); });
@@ -561,14 +549,17 @@ function recortaCanvas(cv) {
     var camera = new THREE.PerspectiveCamera(32, w / h, 0.1, 20);
     camera.position.set(0, 0.48, 4.35);
 
-    scene.add(new THREE.AmbientLight(0xffffff, 1.05));
-    var key = new THREE.DirectionalLight(0xffffff, 1.35);
+    // Luz ambiente + luz principal prata + luz de recorte Azul Glacial (10% destaque)
+    scene.add(new THREE.AmbientLight(0xffffff, 1.02));
+    var key = new THREE.DirectionalLight(0xf8fafc, 1.4);
     key.position.set(2.2, 3.4, 3.6);
     scene.add(key);
-    var rim = new THREE.DirectionalLight(0xe2e8f0, 0.90);
-    rim.position.set(-2.5, 2.2, -3.2);
-    scene.add(rim);
-    var fill = new THREE.DirectionalLight(0xffffff, 0.50);
+
+    var accentRim = new THREE.DirectionalLight(0x38bdf8, 1.15);
+    accentRim.position.set(-2.6, 2.2, -3.0);
+    scene.add(accentRim);
+
+    var fill = new THREE.DirectionalLight(0xffffff, 0.52);
     fill.position.set(0, -2.0, 2.4);
     scene.add(fill);
 
@@ -583,6 +574,7 @@ function recortaCanvas(cv) {
       camera: camera,
       pivot: pivot,
       currentRotY: 0,
+      currentCamZ: 4.35,
       loadVariant: function (corIdx) {
         var corNome = (p.cores && p.cores[corIdx]) || "Preta";
         var hex = hexDe(corNome);
@@ -612,14 +604,23 @@ function recortaCanvas(cv) {
   function animateLoop(t) {
     rafId = requestAnimationFrame(animateLoop);
     var sec = (t || 0) * 0.001;
+    if (autoSpin && !reduce) spinAngle += 0.016;
+
     scenes.forEach(function (sc) {
       var isCenter = sc.idx === centerIdx;
-      // Gira 180° ao arrastar cima/baixo (Frente <-> Costas) e gira de lado ao arrastar horizontalmente
       var sideTurn = isCenter ? (-dragShift * 0.65) : 0;
-      var targetY = (isCenter && isBack ? Math.PI : 0) + (isCenter ? dragRotOffset : 0) + sideTurn;
-      sc.currentRotY += (targetY - sc.currentRotY) * 0.18;
+      var targetY = isCenter
+        ? ((autoSpin ? spinAngle : (isBack ? Math.PI : 0)) + dragRotOffset + sideTurn)
+        : 0;
+      sc.currentRotY += (targetY - sc.currentRotY) * 0.16;
       sc.pivot.rotation.y = sc.currentRotY;
-      sc.pivot.rotation.z = isCenter && !reduce ? Math.sin(sec * 1.8) * 0.015 : 0;
+      sc.pivot.rotation.z = isCenter && !reduce ? Math.sin(sec * 1.8) * 0.016 : 0;
+
+      // Zoom 3D suave para inspecionar detalhes da roupa
+      var targetZ = (isCenter && zoom3D) ? 3.25 : 4.35;
+      sc.currentCamZ += (targetZ - sc.currentCamZ) * 0.14;
+      sc.camera.position.z = sc.currentCamZ;
+
       sc.renderer.render(sc.scene, sc.camera);
     });
   }
@@ -646,8 +647,11 @@ function recortaCanvas(cv) {
     lista = produtos;
     centerIdx = Math.min(centerIdx, Math.max(0, lista.length - 1));
     isBack = false;
+    autoSpin = false;
+    zoom3D = false;
     dragRotOffset = 0;
     dragShift = 0;
+    spinAngle = 0;
 
     if (!lista.length) {
       host.innerHTML = '<p class="vazio">Nenhuma peça encontrada.</p>';
@@ -657,9 +661,14 @@ function recortaCanvas(cv) {
     host.innerHTML =
       '<div class="look-studio">' +
         '<div class="look-stage" id="lookStage">' +
+          '<div class="stage-pedestal" aria-hidden="true"></div>' +
           '<div class="stage-top">' +
-            '<button type="button" class="side-pill" id="btnFlipSide" aria-label="Virar peça frente e costas"><span class="side-dot"></span><span id="sideLabel">Vista: Frente · Ver costas ↻</span></button>' +
-            '<span class="stage-hint">← → Vira de lado e troca · ↑ ↓ Vira de costas</span>' +
+            '<div class="stage-controls">' +
+              '<button type="button" class="side-pill" id="btnFlipSide" aria-label="Virar peça frente e costas"><span class="side-dot"></span><span id="sideLabel">Vista: Frente ↻</span></button>' +
+              '<button type="button" class="side-pill" id="btnAutoSpin" aria-pressed="false">360° Auto</button>' +
+              '<button type="button" class="side-pill" id="btnZoom3D" aria-pressed="false">Zoom 3D</button>' +
+            '</div>' +
+            '<span class="stage-hint">← → Troca · ↑ ↓ Costas</span>' +
           '</div>' +
           '<div class="look-track" id="lookTrack" role="region" aria-label="Arara 3D interativa"></div>' +
           '<div class="stage-foot">' +
@@ -668,7 +677,7 @@ function recortaCanvas(cv) {
             '<button type="button" class="nav-arrow" id="nextLook" aria-label="Próxima peça">›</button>' +
           '</div>' +
         '</div>' +
-        '<aside class="look-panel" id="lookPanel" aria-label="Detalhes da peça selecionada"></aside>' +
+        '<aside class="look-panel" id="lookPanel" data-tilt data-tilt-max="4" aria-label="Detalhes da peça selecionada"></aside>' +
       '</div>';
 
     var track = $("#lookTrack", host);
@@ -699,7 +708,17 @@ function recortaCanvas(cv) {
     var lbl = $("#sideLabel", host);
     if (pill && lbl) {
       pill.classList.toggle("is-back", isBack);
-      lbl.textContent = isBack ? "Vista: Costas · Ver frente ↻" : "Vista: Frente · Ver costas ↻";
+      lbl.textContent = isBack ? "Vista: Costas ↻" : "Vista: Frente ↻";
+    }
+    var spinBtn = $("#btnAutoSpin", host);
+    if (spinBtn) {
+      spinBtn.classList.toggle("active", autoSpin);
+      spinBtn.setAttribute("aria-pressed", String(autoSpin));
+    }
+    var zoomBtn = $("#btnZoom3D", host);
+    if (zoomBtn) {
+      zoomBtn.classList.toggle("active", zoom3D);
+      zoomBtn.setAttribute("aria-pressed", String(zoom3D));
     }
 
     var mobile = window.innerWidth <= 860;
@@ -767,8 +786,8 @@ function recortaCanvas(cv) {
       '<div class="panel-foot">' +
         '<p class="panel-msg" id="panelMsg" role="status"></p>' +
         '<div class="panel-actions">' +
-          '<button type="button" class="btn" id="addLookBtn">Adicionar à sacola</button>' +
-          '<button type="button" class="btn ghost" id="buyLookBtn">Comprar</button>' +
+          '<button type="button" class="btn btn-accent" id="addLookBtn">Adicionar à sacola</button>' +
+          '<button type="button" class="btn ghost" id="buyLookBtn">Comprar agora</button>' +
         '</div>' +
       '</div>';
   }
@@ -777,8 +796,10 @@ function recortaCanvas(cv) {
     if (!lista.length) return;
     centerIdx = (idx + lista.length) % lista.length;
     isBack = false;
+    autoSpin = false;
     dragRotOffset = 0;
     dragShift = 0;
+    spinAngle = 0;
     atualizarPosicoes3D(false);
     atualizarPainel();
   }
@@ -812,12 +833,11 @@ function recortaCanvas(cv) {
       }
 
       if (axis === "x") {
-        // Arrastar para o lado vira a peça de lado em 3D e desliza o carrossel ao vivo
         var step = window.innerWidth <= 860 ? 150 : 210;
         dragShift = Math.max(-1.15, Math.min(1.15, dx / step));
         atualizarPosicoes3D(true);
       } else if (axis === "y") {
-        // Arrastar para cima ou para baixo gira a roupa de costas em 180°
+        autoSpin = false;
         dragRotOffset = Math.max(-Math.PI, Math.min(Math.PI, (-dy / 155) * Math.PI));
       }
     });
@@ -825,11 +845,8 @@ function recortaCanvas(cv) {
     var finishGesture = function (e) {
       if (axis === "x") {
         dragShift = 0;
-        if (Math.abs(lastDx) > 36) {
-          irPara(centerIdx + (lastDx < 0 ? 1 : -1));
-        } else {
-          atualizarPosicoes3D(false);
-        }
+        if (Math.abs(lastDx) > 36) irPara(centerIdx + (lastDx < 0 ? 1 : -1));
+        else atualizarPosicoes3D(false);
       } else if (axis === "y") {
         if (Math.abs(lastDy) > 28) isBack = !isBack;
         dragRotOffset = 0;
@@ -839,14 +856,10 @@ function recortaCanvas(cv) {
         if (card) {
           var idx = +card.dataset.look;
           if (idx !== centerIdx) irPara(idx);
-          else { isBack = !isBack; atualizarPosicoes3D(false); }
+          else { autoSpin = false; isBack = !isBack; atualizarPosicoes3D(false); }
         }
       }
-      startX = null;
-      startY = null;
-      axis = null;
-      dragRotOffset = 0;
-      dragShift = 0;
+      startX = null; startY = null; axis = null; dragRotOffset = 0; dragShift = 0;
     };
 
     track.addEventListener("pointerup", finishGesture);
@@ -856,7 +869,14 @@ function recortaCanvas(cv) {
     });
 
     host.addEventListener("click", function (e) {
-      if (e.target.closest("#btnFlipSide")) { isBack = !isBack; atualizarPosicoes3D(false); return; }
+      if (e.target.closest("#btnFlipSide")) { autoSpin = false; isBack = !isBack; atualizarPosicoes3D(false); return; }
+      if (e.target.closest("#btnAutoSpin")) {
+        autoSpin = !autoSpin;
+        if (autoSpin) spinAngle = isBack ? Math.PI : 0;
+        atualizarPosicoes3D(false);
+        return;
+      }
+      if (e.target.closest("#btnZoom3D")) { zoom3D = !zoom3D; atualizarPosicoes3D(false); return; }
       if (e.target.closest("#prevLook")) { irPara(centerIdx - 1); return; }
       if (e.target.closest("#nextLook")) { irPara(centerIdx + 1); return; }
 
@@ -903,7 +923,7 @@ function recortaCanvas(cv) {
     if (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
     if (e.key === "ArrowLeft") irPara(centerIdx - 1);
     else if (e.key === "ArrowRight") irPara(centerIdx + 1);
-    else if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); isBack = !isBack; atualizarPosicoes3D(false); }
+    else if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); autoSpin = false; isBack = !isBack; atualizarPosicoes3D(false); }
   });
 
   window.Vitrine = { render: render, abrir: function (i) { irPara(i); }, fechar: function () {} };
