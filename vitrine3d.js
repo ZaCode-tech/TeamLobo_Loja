@@ -1,8 +1,4 @@
-/* VITRINE 3D WEBGL (THREE.JS) — Team Lobo Store
-   - Converte automaticamente as imagens de assets/produtos/ (Frente + Costas) em modelos 3D pendurados no cabide cromado 3D.
-   - Arrastar para os lados (← →): gira a peça de lado em 3D e troca o produto no carrossel.
-   - Arrastar para cima/baixo (↑ ↓) ou tocar na peça: gira 180° mostrando Frente e Costas.
-   - Controles extras: Zoom 3D (inspecionar tecido) e Giro 360° automático. */
+/* EXIBIÇÃO 3D DAS PEÇAS — Team Lobo Store */
 
 function recortaCanvas(cv) {
   var w = cv.width, h = cv.height, ctx = cv.getContext("2d"), im = ctx.getImageData(0, 0, w, h), d = im.data, i, x, y, p;
@@ -47,8 +43,8 @@ function recortaCanvas(cv) {
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
 
   var host = $("#vitrine");
-  var lista = [], centerIdx = 0, isBack = false, autoSpin = false, zoom3D = false;
-  var dragRotOffset = 0, dragShift = 0, spinAngle = 0;
+  var lista = [], centerIdx = 0, isBack = false, zoom3D = false;
+  var dragRotOffset = 0, dragShift = 0;
   var selecao = {};
   var scenes = [], rafId = 0, pendingList = null;
 
@@ -95,7 +91,7 @@ function recortaCanvas(cv) {
     return "camiseta";
   }
 
-  /* ---------- Imagens Frente e Costas em assets/produtos/ ---------- */
+  /* ---------- Imagens Frente e Costas ---------- */
   function resolveFotoUrl(raw) {
     if (!raw) return "";
     raw = String(raw).trim();
@@ -160,7 +156,7 @@ function recortaCanvas(cv) {
     });
   }
 
-  /* ---------- Cabide Metálico Cromado 3D (30% Prata Metalizada) ---------- */
+  /* ---------- Cabide Metálico 3D ---------- */
   function buildHanger3D(halfSpan, yNeck, isBottomClip) {
     var hanger = new THREE.Group();
     var chromeMat = new THREE.MeshStandardMaterial({
@@ -218,7 +214,7 @@ function recortaCanvas(cv) {
     return hanger;
   }
 
-  /* ---------- Conversor Imagem (Frente + Costas) -> Modelo 3D Volumétrico ---------- */
+  /* ---------- Conversor Imagem -> Peça 3D ---------- */
   function createAutoBackTexture(rgb, alphaCanvas) {
     var w = alphaCanvas.width, h = alphaCanvas.height;
     var cv = document.createElement("canvas");
@@ -433,7 +429,6 @@ function recortaCanvas(cv) {
     rootGroup.add(frontMesh);
     rootGroup.add(backMesh);
 
-    // Borda lateral 3D unindo frente e costas
     var rimMat = new THREE.MeshStandardMaterial({
       color: isOriginalColor
         ? new THREE.Color("rgb(" + fabricRgb[0] + "," + fabricRgb[1] + "," + fabricRgb[2] + ")")
@@ -476,7 +471,7 @@ function recortaCanvas(cv) {
     return rootGroup;
   }
 
-  /* ---------- Fallback 3D no cabide (enquanto o PNG da peça não foi enviado para assets/produtos/) ---------- */
+  /* ---------- Fallback 3D ---------- */
   function buildFallbackGarment3D(tipo, hexColor) {
     var rootGroup = new THREE.Group();
     var isLight = claro(hexColor);
@@ -529,7 +524,7 @@ function recortaCanvas(cv) {
     return rootGroup;
   }
 
-  /* ---------- Renderizadores WebGL (Iluminação Prata + Azul Glacial 10%) ---------- */
+  /* ---------- Renderizadores WebGL ---------- */
   function disposeScenes() {
     cancelAnimationFrame(rafId);
     scenes.forEach(function (s) { if (s.renderer) s.renderer.dispose(); });
@@ -549,7 +544,6 @@ function recortaCanvas(cv) {
     var camera = new THREE.PerspectiveCamera(32, w / h, 0.1, 20);
     camera.position.set(0, 0.48, 4.35);
 
-    // Luz ambiente + luz principal prata + luz de recorte Azul Glacial (10% destaque)
     scene.add(new THREE.AmbientLight(0xffffff, 1.02));
     var key = new THREE.DirectionalLight(0xf8fafc, 1.4);
     key.position.set(2.2, 3.4, 3.6);
@@ -604,19 +598,15 @@ function recortaCanvas(cv) {
   function animateLoop(t) {
     rafId = requestAnimationFrame(animateLoop);
     var sec = (t || 0) * 0.001;
-    if (autoSpin && !reduce) spinAngle += 0.016;
 
     scenes.forEach(function (sc) {
       var isCenter = sc.idx === centerIdx;
       var sideTurn = isCenter ? (-dragShift * 0.65) : 0;
-      var targetY = isCenter
-        ? ((autoSpin ? spinAngle : (isBack ? Math.PI : 0)) + dragRotOffset + sideTurn)
-        : 0;
+      var targetY = isCenter ? ((isBack ? Math.PI : 0) + dragRotOffset + sideTurn) : 0;
       sc.currentRotY += (targetY - sc.currentRotY) * 0.16;
       sc.pivot.rotation.y = sc.currentRotY;
       sc.pivot.rotation.z = isCenter && !reduce ? Math.sin(sec * 1.8) * 0.016 : 0;
 
-      // Zoom 3D suave para inspecionar detalhes da roupa
       var targetZ = (isCenter && zoom3D) ? 3.25 : 4.35;
       sc.currentCamZ += (targetZ - sc.currentCamZ) * 0.14;
       sc.camera.position.z = sc.currentCamZ;
@@ -633,7 +623,7 @@ function recortaCanvas(cv) {
     return selecao[p.id];
   }
 
-  /* ---------- Renderização da Vitrine ---------- */
+  /* ---------- Renderização ---------- */
   function render(produtos) {
     pendingList = produtos;
     ensureThree(function () {
@@ -647,11 +637,9 @@ function recortaCanvas(cv) {
     lista = produtos;
     centerIdx = Math.min(centerIdx, Math.max(0, lista.length - 1));
     isBack = false;
-    autoSpin = false;
     zoom3D = false;
     dragRotOffset = 0;
     dragShift = 0;
-    spinAngle = 0;
 
     if (!lista.length) {
       host.innerHTML = '<p class="vazio">Nenhuma peça encontrada.</p>';
@@ -664,20 +652,18 @@ function recortaCanvas(cv) {
           '<div class="stage-pedestal" aria-hidden="true"></div>' +
           '<div class="stage-top">' +
             '<div class="stage-controls">' +
-              '<button type="button" class="side-pill" id="btnFlipSide" aria-label="Virar peça frente e costas"><span class="side-dot"></span><span id="sideLabel">Vista: Frente ↻</span></button>' +
-              '<button type="button" class="side-pill" id="btnAutoSpin" aria-pressed="false">360° Auto</button>' +
-              '<button type="button" class="side-pill" id="btnZoom3D" aria-pressed="false">Zoom 3D</button>' +
+              '<button type="button" class="side-pill" id="btnFlipSide" aria-label="Alternar frente e costas"><span class="side-dot"></span><span id="sideLabel">Frente</span></button>' +
+              '<button type="button" class="side-pill" id="btnZoom3D" aria-pressed="false" aria-label="Aproximar detalhes">Zoom</button>' +
             '</div>' +
-            '<span class="stage-hint">← → Troca · ↑ ↓ Costas</span>' +
           '</div>' +
-          '<div class="look-track" id="lookTrack" role="region" aria-label="Arara 3D interativa"></div>' +
+          '<div class="look-track" id="lookTrack" role="region" aria-label="Peças da coleção"></div>' +
           '<div class="stage-foot">' +
             '<button type="button" class="nav-arrow" id="prevLook" aria-label="Peça anterior">‹</button>' +
             '<div class="dots" id="lookDots"></div>' +
             '<button type="button" class="nav-arrow" id="nextLook" aria-label="Próxima peça">›</button>' +
           '</div>' +
         '</div>' +
-        '<aside class="look-panel" id="lookPanel" data-tilt data-tilt-max="4" aria-label="Detalhes da peça selecionada"></aside>' +
+        '<aside class="look-panel" id="lookPanel" data-tilt data-tilt-max="4" aria-label="Detalhes do produto"></aside>' +
       '</div>';
 
     var track = $("#lookTrack", host);
@@ -708,12 +694,7 @@ function recortaCanvas(cv) {
     var lbl = $("#sideLabel", host);
     if (pill && lbl) {
       pill.classList.toggle("is-back", isBack);
-      lbl.textContent = isBack ? "Vista: Costas ↻" : "Vista: Frente ↻";
-    }
-    var spinBtn = $("#btnAutoSpin", host);
-    if (spinBtn) {
-      spinBtn.classList.toggle("active", autoSpin);
-      spinBtn.setAttribute("aria-pressed", String(autoSpin));
+      lbl.textContent = isBack ? "Costas" : "Frente";
     }
     var zoomBtn = $("#btnZoom3D", host);
     if (zoomBtn) {
@@ -775,7 +756,7 @@ function recortaCanvas(cv) {
       '<div>' +
         '<div class="panel-head">' +
           '<div>' +
-            '<span class="panel-kicker">Peça ' + (centerIdx + 1) + ' de ' + lista.length + (p.categoria ? ' · ' + esc(p.categoria) : '') + '</span>' +
+            '<span class="panel-kicker">' + esc(p.categoria || "Team Lobo") + '</span>' +
             '<h2 class="panel-title">' + esc(p.nome) + '</h2>' +
             '<p class="panel-sub">' + esc(p.descricao || "") + '</p>' +
           '</div>' +
@@ -786,7 +767,7 @@ function recortaCanvas(cv) {
       '<div class="panel-foot">' +
         '<p class="panel-msg" id="panelMsg" role="status"></p>' +
         '<div class="panel-actions">' +
-          '<button type="button" class="btn btn-accent" id="addLookBtn">Adicionar à sacola</button>' +
+          '<button type="button" class="btn btn-accent" id="addLookBtn">Adicionar ao carrinho</button>' +
           '<button type="button" class="btn ghost" id="buyLookBtn">Comprar agora</button>' +
         '</div>' +
       '</div>';
@@ -796,10 +777,8 @@ function recortaCanvas(cv) {
     if (!lista.length) return;
     centerIdx = (idx + lista.length) % lista.length;
     isBack = false;
-    autoSpin = false;
     dragRotOffset = 0;
     dragShift = 0;
-    spinAngle = 0;
     atualizarPosicoes3D(false);
     atualizarPainel();
   }
@@ -837,7 +816,6 @@ function recortaCanvas(cv) {
         dragShift = Math.max(-1.15, Math.min(1.15, dx / step));
         atualizarPosicoes3D(true);
       } else if (axis === "y") {
-        autoSpin = false;
         dragRotOffset = Math.max(-Math.PI, Math.min(Math.PI, (-dy / 155) * Math.PI));
       }
     });
@@ -856,7 +834,7 @@ function recortaCanvas(cv) {
         if (card) {
           var idx = +card.dataset.look;
           if (idx !== centerIdx) irPara(idx);
-          else { autoSpin = false; isBack = !isBack; atualizarPosicoes3D(false); }
+          else { isBack = !isBack; atualizarPosicoes3D(false); }
         }
       }
       startX = null; startY = null; axis = null; dragRotOffset = 0; dragShift = 0;
@@ -869,13 +847,7 @@ function recortaCanvas(cv) {
     });
 
     host.addEventListener("click", function (e) {
-      if (e.target.closest("#btnFlipSide")) { autoSpin = false; isBack = !isBack; atualizarPosicoes3D(false); return; }
-      if (e.target.closest("#btnAutoSpin")) {
-        autoSpin = !autoSpin;
-        if (autoSpin) spinAngle = isBack ? Math.PI : 0;
-        atualizarPosicoes3D(false);
-        return;
-      }
+      if (e.target.closest("#btnFlipSide")) { isBack = !isBack; atualizarPosicoes3D(false); return; }
       if (e.target.closest("#btnZoom3D")) { zoom3D = !zoom3D; atualizarPosicoes3D(false); return; }
       if (e.target.closest("#prevLook")) { irPara(centerIdx - 1); return; }
       if (e.target.closest("#nextLook")) { irPara(centerIdx + 1); return; }
@@ -911,7 +883,7 @@ function recortaCanvas(cv) {
           C().abrirCheckout();
         } else {
           var msg = $("#panelMsg", host);
-          if (msg) { msg.className = "panel-msg ok"; msg.textContent = peca.nome + " adicionada à sacola ✓"; }
+          if (msg) { msg.className = "panel-msg ok"; msg.textContent = "Adicionado ao carrinho ✓"; }
         }
       }
     });
@@ -923,7 +895,7 @@ function recortaCanvas(cv) {
     if (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
     if (e.key === "ArrowLeft") irPara(centerIdx - 1);
     else if (e.key === "ArrowRight") irPara(centerIdx + 1);
-    else if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); autoSpin = false; isBack = !isBack; atualizarPosicoes3D(false); }
+    else if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); isBack = !isBack; atualizarPosicoes3D(false); }
   });
 
   window.Vitrine = { render: render, abrir: function (i) { irPara(i); }, fechar: function () {} };
