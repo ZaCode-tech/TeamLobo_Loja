@@ -1,4 +1,4 @@
-/* LOJA TEAM LOBO — vitrine, carrinho, checkout e Pix (JavaScript puro) */
+/* LOJA TEAM LOBO — vitrine, animações 3D de interface, carrinho, checkout e Pix */
 (function () {
   "use strict";
   var L = window.LOJA || {}, root = document.documentElement;
@@ -7,6 +7,87 @@
   var money = function (c) { return (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }); };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
   var produtos = [], carrinho = [], filtro = "Todos", fonte = "reserva (produtos.js)";
+
+  /* ---------- Efeitos 3D de Interface (Partículas Hero, Tilt 3D e Scroll Reveal) ---------- */
+  function initHeroEffects() {
+    var vid = $("#heroVideo");
+    if (vid) {
+      vid.addEventListener("error", function () { vid.style.display = "none"; }, true);
+      var src = $("source", vid);
+      if (src) src.addEventListener("error", function () { vid.style.display = "none"; });
+    }
+
+    var cv = $("#heroParticles");
+    if (!cv || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    var ctx = cv.getContext("2d");
+    var pts = [];
+    function resize() {
+      cv.width = cv.offsetWidth || window.innerWidth;
+      cv.height = cv.offsetHeight || 600;
+    }
+    resize();
+    window.addEventListener("resize", resize);
+
+    for (var i = 0; i < 38; i++) {
+      pts.push({
+        x: Math.random() * cv.width,
+        y: Math.random() * cv.height,
+        z: 0.3 + Math.random() * 0.9,
+        vx: (Math.random() - 0.5) * 0.35,
+        vy: -0.25 - Math.random() * 0.55,
+        accent: i % 4 === 0
+      });
+    }
+
+    function tick() {
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      for (var j = 0; j < pts.length; j++) {
+        var p = pts[j];
+        p.x += p.vx * p.z;
+        p.y += p.vy * p.z;
+        if (p.y < -10) { p.y = cv.height + 10; p.x = Math.random() * cv.width; }
+        if (p.x < -10) p.x = cv.width + 10;
+        if (p.x > cv.width + 10) p.x = -10;
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 1.3 * p.z, 0, Math.PI * 2);
+        ctx.fillStyle = p.accent ? "rgba(56,189,248,0.65)" : "rgba(226,232,240,0.35)";
+        ctx.fill();
+      }
+      requestAnimationFrame(tick);
+    }
+    tick();
+  }
+
+  function initTiltAndReveal() {
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      document.addEventListener("pointermove", function (e) {
+        if (e.pointerType === "touch") return;
+        var el = e.target.closest("[data-tilt]");
+        $$("[data-tilt]").forEach(function (card) {
+          if (card !== el) card.style.transform = "";
+        });
+        if (!el) return;
+        var r = el.getBoundingClientRect();
+        var max = +(el.dataset.tiltMax || 6);
+        var px = (e.clientX - r.left) / r.width - 0.5;
+        var py = (e.clientY - r.top) / r.height - 0.5;
+        el.style.transform = "perspective(1000px) rotateX(" + (-py * max * 2).toFixed(2) + "deg) rotateY(" + (px * max * 2).toFixed(2) + "deg)";
+      });
+    }
+
+    var revs = $$(".reveal");
+    if ("IntersectionObserver" in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); }
+        });
+      }, { threshold: 0.12 });
+      revs.forEach(function (el) { io.observe(el); });
+    } else {
+      revs.forEach(function (el) { el.classList.add("in"); });
+    }
+  }
 
   /* ---------- Pix (BR Code) ---------- */
   function emv(id, v) { return id + ("0" + v.length).slice(-2) + v; }
@@ -22,7 +103,7 @@
       emv("62", emv("05", String(txid).replace(/[^A-Za-z0-9]/g, "").slice(0, 25) || "***")) + "6304";
     return p + crc16(p);
   }
-  window.__pix = { pixPayload: pixPayload, crc16: crc16 }; // usado nos testes
+  window.__pix = { pixPayload: pixPayload, crc16: crc16 };
 
   /* ---------- Validações e máscaras ---------- */
   function cpfOk(c) {
@@ -75,27 +156,12 @@
   $("#cats").addEventListener("click", function (e) { var b = e.target.closest(".chip"); if (!b) return; filtro = b.textContent; renderCats(); renderGrid(); });
   $("#q").addEventListener("input", renderGrid); $("#ord").addEventListener("change", renderGrid);
 
-  function abrirProduto(id) {
-    var p = prod(id); if (!p) return;
-    var tam = p.tamanhos && p.tamanhos.length, cor = p.cores && p.cores.length;
-    var chips = function (nome, arr) { return arr.map(function (v, i) { return '<label class="sel"><input type="radio" name="' + nome + '" value="' + esc(v) + '"' + (i === 0 ? " checked" : "") + "><span>" + esc(v) + "</span></label>"; }).join(""); };
-    $("#prodBody").innerHTML = '<div class="pdet">' + foto(p, "big") + "<div><h2>" + esc(p.nome) + '</h2><p class="price big">' + money(p.preco) + "</p><p>" + esc(p.descricao || "") + "</p>" +
-      (tam ? '<fieldset class="opts"><legend>Tamanho</legend>' + chips("tam", p.tamanhos) + "</fieldset>" : "") + (cor ? '<fieldset class="opts"><legend>Cor</legend>' + chips("cor", p.cores) + "</fieldset>" : "") +
-      '<label class="qty">Quantidade<input id="qtd" type="number" min="1" max="10" value="1"></label>' +
-      '<div class="acts"><button class="btn" type="button" id="addC">Adicionar ao carrinho</button><button class="btn ghost" type="button" id="buyN">Comprar agora</button></div></div></div>';
-    plano($("#prodBody"));
-    var ler = function () { var t = $('input[name="tam"]:checked', $("#prodBody")), c = $('input[name="cor"]:checked', $("#prodBody")); return [t ? t.value : "", c ? c.value : "", Math.max(1, Math.min(10, +$("#qtd").value || 1))]; };
-    $("#addC").onclick = function () { var v = ler(); adicionar(p.id, v[0], v[1], v[2]); $("#dlgProd").close(); abrirCarrinho(); };
-    $("#buyN").onclick = function () { var v = ler(); adicionar(p.id, v[0], v[1], v[2]); $("#dlgProd").close(); abrirCheckout(); };
-    abrir($("#dlgProd"));
-  }
-
   function abrirCarrinho() {
     var ls = linhas(), b = $("#cartBody");
     if (!ls.length) { b.innerHTML = "<h2>Carrinho</h2><p>Seu carrinho está vazio.</p>"; abrir($("#dlgCart")); return; }
     b.innerHTML = "<h2>Carrinho</h2>" + ls.map(function (l, n) {
       return '<div class="item">' + foto(l.p, "mini") + '<div><b>' + esc(l.p.nome) + "</b><small>" + esc([l.i.tam, l.i.cor].filter(Boolean).join(" · ")) + "</small><span>" + money(l.p.preco) + '</span></div><div class="stp"><button type="button" data-n="' + n + '" data-d="-1" aria-label="Diminuir">−</button><span>' + l.i.qtd + '</span><button type="button" data-n="' + n + '" data-d="1" aria-label="Aumentar">+</button><button type="button" data-n="' + n + '" data-d="x" aria-label="Remover">🗑</button></div></div>';
-    }).join("") + '<p class="tot">Subtotal <b>' + money(subtotal()) + '</b></p><button class="btn" type="button" id="goCheck">Finalizar compra</button>';
+    }).join("") + '<p class="tot">Subtotal <b>' + money(subtotal()) + '</b></p><button class="btn btn-accent" type="button" id="goCheck">Finalizar compra</button>';
     plano(b); $("#goCheck").onclick = function () { $("#dlgCart").close(); abrirCheckout(); }; abrir($("#dlgCart"));
   }
   $("#cartBody").addEventListener("click", function (e) {
@@ -146,7 +212,7 @@
     var d = dados(), msg = validar(d); if (msg) { $("#erro").textContent = msg; return; }
     $("#erro").textContent = ""; var btn = $("#enviar"); btn.disabled = true; btn.textContent = "Enviando…";
     var fim = function () { btn.disabled = false; btn.textContent = "Finalizar pedido"; };
-    if (!L.endpoint) { // modo demonstração: nada é enviado
+    if (!L.endpoint) {
       var sub = subtotal(), fr = L.freteCentavos || 0; mostrarResultado(d, { ok: true, id: "TL-DEMO01", total: sub + fr }, true); fim(); return;
     }
     var ctl = new AbortController(), to = setTimeout(function () { ctl.abort(); }, 25000);
@@ -164,12 +230,12 @@
     if (d.pagamento === "pix") {
       if (!L.pix || !L.pix.chave) { b.innerHTML = topo + '<p class="erro">A chave Pix da loja ainda não foi configurada. Fale com a loja pelo WhatsApp.</p>' + fim; limpa(); return; }
       var code = pixPayload(L.pix.chave, L.pix.nomeRecebedor, L.pix.cidade, r.total, r.id.replace(/-/g, "")), qr = qrcode(0, "M"); qr.addData(code); qr.make();
-      b.innerHTML = topo + '<div class="qr">' + qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true }) + '</div><p class="hint">Abra o app do seu banco, escolha Pix e leia o QR code, ou use o Pix copia e cola:</p><textarea id="cola" readonly rows="3">' + esc(code) + '</textarea><button class="btn" type="button" id="copiar">Copiar código Pix</button>' +
+      b.innerHTML = topo + '<div class="qr">' + qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true }) + '</div><p class="hint">Abra o app do seu banco, escolha Pix e leia o QR code, ou use o Pix copia e cola:</p><textarea id="cola" readonly rows="3">' + esc(code) + '</textarea><button class="btn btn-accent" type="button" id="copiar">Copiar código Pix</button>' +
         "<p class=\"hint\">Confira o valor e o nome do recebedor antes de pagar.</p>" + fim;
       $("#copiar").onclick = function () { var t = $("#cola"); t.select(); (navigator.clipboard ? navigator.clipboard.writeText(t.value) : Promise.reject()).catch(function () { document.execCommand("copy"); }); this.textContent = "Código copiado ✓"; };
     } else {
       var link = L.cartao && L.cartao[d.pagamento];
-      b.innerHTML = topo + (link ? '<p>Pague no cartão pelo link seguro do provedor de pagamento. Informe o código <b>' + esc(r.id) + '</b> se pedido.</p><a class="btn" href="' + esc(link) + '" target="_blank" rel="noopener">Pagar no cartão</a>'
+      b.innerHTML = topo + (link ? '<p>Pague no cartão pelo link seguro do provedor de pagamento. Informe o código <b>' + esc(r.id) + '</b> se pedido.</p><a class="btn btn-accent" href="' + esc(link) + '" target="_blank" rel="noopener">Pagar no cartão</a>'
         : "<p>A loja vai enviar o link para você pagar no cartão por WhatsApp ou e-mail.</p>") + fim;
     }
     limpa();
@@ -194,6 +260,16 @@
   function aviso(t) { var d = document.createElement("div"); d.className = "demo-bar"; d.textContent = t; document.body.insertBefore(d, document.body.firstChild); }
   if (!window.LOJA) aviso("Atenção: o arquivo config.js não carregou. Ele precisa começar com window.LOJA = { e não pode conter o código do Code.gs.");
   else if (!L.endpoint) aviso("Modo demonstração: a loja ainda não está ligada à planilha (endpoint vazio no config.js). Os produtos vêm do produtos.js e os pedidos não são enviados.");
+
+  initHeroEffects();
+  initTiltAndReveal();
   carregarCarrinho();
-  carregar().then(function (lista) { if (/[?&]debug\b/.test(location.search)) aviso("Catálogo lido de: " + fonte + (fonte === "planilha" ? ". Para mudar preços, edite a aba Produtos da planilha." : ". O produtos.js é só reserva: se a planilha estiver ligada, edite os preços nela.")); produtos = lista; carrinho = carrinho.filter(function (i) { return prod(i.id); }); salvar(); renderCats(); renderGrid(); });
+  carregar().then(function (lista) {
+    if (/[?&]debug\b/.test(location.search)) aviso("Catálogo lido de: " + fonte);
+    produtos = lista;
+    carrinho = carrinho.filter(function (i) { return prod(i.id); });
+    salvar();
+    renderCats();
+    renderGrid();
+  });
 })();
